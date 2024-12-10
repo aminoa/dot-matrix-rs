@@ -1,12 +1,12 @@
 pub struct CPU {
     // Registers
-    AF: u16,
-    BC: u16,
-    DE: u16,
-    HL: u16,
+    pub AF: u16,
+    pub BC: u16,
+    pub DE: u16,
+    pub HL: u16,
 
-    pc: u16,
-    sp: u16
+    pub pc: u16,
+    pub sp: u16
 }
 
 impl CPU {
@@ -20,5 +20,14 @@ impl CPU {
             pc: 0x100,
             sp: 0xFFFE
         }
+    }
+
+    pub fn execute(&mut self, opcode: u8) {
+        // increment pc by opcode const
+        match opcode {
+            // 0x02 => mmu.write_byte(BC, A),
+            // 0x06 => mmu.write_byte(),
+        }
+        self.pc += 4;
     }
 }
