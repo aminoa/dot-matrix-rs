@@ -18,4 +18,15 @@ impl MMU {
             _ => 0xFF
         }
     }
+
+    pub fn write_byte(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x0..0x7FFF => self.cart[addr as usize] = value,
+            _ => ()
+        }
+    }
+
+    pub fn read_short(&self, addr: u16) -> u16 {
+        return (self.read_byte(addr) as u16) | (self.read_byte(addr + 1) << 8) as u16;
+    }
 }
