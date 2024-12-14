@@ -5,6 +5,7 @@ use serde_json;
 
 use crate::cpu::CPU;
 use crate::mmu::MMU;
+use crate::consts::{OPCODES, CB_OPCODES};
 
 pub struct GB {
     pub cycles: i64,
@@ -12,7 +13,7 @@ pub struct GB {
     pub mmu: Rc<RefCell<MMU>>
 }
 
-// RC: shared ow
+// RC: shared 
 
 impl GB {
     pub fn new(rom_path: String) -> GB {
@@ -28,17 +29,17 @@ impl GB {
     }
 
     pub fn run(&mut self) {
-        let opcodes_file = fs::File::open("./data/opcodes.json").expect("Error: Unable to read the file");
-        let parsed_opcodes : serde_json::Value = serde_json::from_reader(opcodes_file).expect("Error: Unable to parse the JSON");
+        // let opcodes_file = fs::File::open("./data/opcodes.json").expect("Error: Unable to read the file");
+        // let parsed_opcodes : serde_json::Value = serde_json::from_reader(opcodes_file).expect("Error: Unable to parse the JSON");
+
+        // TODO: clock cycles
         
         loop {
             let instruction = self.mmu.borrow().read_byte(self.cpu.pc.clone());
-            let opcode = format!("0x{:02X}", &instruction);
+            let mnemonic = OPCODES[instruction as usize].mnemonic;
+            println!("PC: {:04X} OP: {:02X} {}", self.cpu.pc, instruction, mnemonic);
 
-            let instruction_metadata = &parsed_opcodes["unprefixed"][&opcode];
-            println!("{}", &instruction_metadata["mnemonic"]);
-
-            self.cpu.pc += instruction_metadata["bytes"][0].as_i64().unwrap() as u16;
+            self.cpu.pc += OPCODES[instruction as usize].bytes as u16;
         }
     }
 }

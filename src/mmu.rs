@@ -27,6 +27,11 @@ impl MMU {
     }
 
     pub fn read_short(&self, addr: u16) -> u16 {
-        return (self.read_byte(addr) as u16) | (self.read_byte(addr + 1) << 8) as u16;
+        return (self.read_byte(addr) as u16) | (self.read_byte(addr + 1) as u16) << 8;
+    }
+
+    pub fn write_short(&mut self, addr: u16, value: u16) {
+        self.write_byte(addr, (value & 0xFF) as u8);
+        self.write_byte(addr + 1, (value >> 8) as u8);
     }
 }

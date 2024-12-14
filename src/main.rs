@@ -1,10 +1,11 @@
 mod gb;
 mod cpu;
 mod mmu;
+mod consts;
 
 use gb::GB;
 fn main() {
-    // read in a file
+    // TODO: use clap to get command line args
     // let rom_path = "./roms/01-special.gb";
     let rom_path = "./roms/tetris.gb";
 

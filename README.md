@@ -4,7 +4,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 ## Implementation Differences from dot-matrix (C++)
 
-- Used `opcodes.json` file to get opcode metadata rather than storing that programatically in `consts.rs`.
+TODO
 
 Credits:
 
