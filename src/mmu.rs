@@ -14,6 +14,9 @@ impl MMU {
 
     pub fn read_byte(&self, addr: u16) -> u8 {
         match addr {
+            // lock LCD for blargs tests
+            0xFF44 => 0x90,
+
             0x0..0x7FFF => self.cart[addr as usize],
             _ => 0xFF
         }
