@@ -4,7 +4,8 @@ use std::cell::RefCell;
 
 use crate::consts::{OPCODES, CB_OPCODES};
 
-enum FlagRegister {
+#[derive(Copy, Clone)]
+pub enum FlagRegister {
     Zero = 7,
     Sub = 6,
     HalfCarry = 5,
@@ -55,7 +56,7 @@ impl CPU {
     }
 
     pub fn get_flag(&self, flag: FlagRegister) -> u8 {
-        return self.f & (1 << flag as u8);
+        return (self.f & (1 << flag as u8)) >> flag as u8;
     }
 
     pub fn set_flag(&mut self, flag: FlagRegister, value: bool) {
@@ -93,7 +94,7 @@ impl CPU {
         self.d = (value >> 8) as u8;
         self.e = value as u8;
     }
-
+    
     pub fn get_HL(&self) -> u16 {
         return (self.h as u16) << 8 | self.l as u16;
     }
@@ -135,113 +136,122 @@ impl CPU {
     }
 
     pub fn rlca(&mut self) {
-        let carry = self.a >> 7;
-        self.a = (self.a << 1) | carry;
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = self.a >> 7;
+        self.a = (self.a << 1) | old_carry;
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
     }
 
     pub fn rrca(&mut self) {
-        let carry = self.a & 1;
-        self.a = (self.a >> 1) | (carry << 7);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = self.a & 1;
+        self.a = (self.a >> 1) | (old_carry << 7);
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
     }
 
     pub fn rla(&mut self) {
-        let carry = self.a >> 7;
-        self.a = (self.a << 1) | self.get_flag(FlagRegister::Carry);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = self.a >> 7;
+        self.a = (self.a << 1) | old_carry;
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
     }
 
     pub fn rra(&mut self) {
-        let carry = self.a & 1;
-        self.a = (self.a >> 1) | (self.get_flag(FlagRegister::Carry) << 7);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = self.a & 1;
+        self.a = (self.a >> 1) | (old_carry << 7);
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
     }
 
     pub fn rlc(&mut self, reg: u8) -> u8 {
-        let carry = reg >> 7;
-        let result = (reg << 1) | carry;
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = reg >> 7;
+        let result = (reg << 1) | old_carry;
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
 
     pub fn rrc(&mut self, reg: u8) -> u8 {
-        let carry = reg & 1;
-        let result = (reg >> 1) | (carry << 7);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = reg & 1;
+        let result = (reg >> 1) | (old_carry << 7);
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
 
     pub fn rl(&mut self, reg: u8) -> u8 {
-        let carry = reg >> 7;
-        let result = (reg << 1) | self.get_flag(FlagRegister::Carry);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = reg >> 7;
+        let result = (reg << 1) | old_carry;
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
 
     pub fn rr(&mut self, reg: u8) -> u8 {
-        let carry = reg & 1;
-        let result = (reg >> 1) | (self.get_flag(FlagRegister::Carry) << 7);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = reg & 1;
+        let result = (reg >> 1) | (old_carry << 7);
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
 
     pub fn sla(&mut self, reg: u8) -> u8 {
-        let carry = reg >> 7;
+        let new_carry = reg >> 7;
         let result = reg << 1;
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
 
     pub fn sra(&mut self, reg: u8) -> u8 {
-        let carry = reg & 1;
-        let result = (reg >> 1) | (reg & 0x80);
+        let old_carry = self.get_flag(FlagRegister::Carry);
+        let new_carry = reg & 1;
+        let result = (reg >> 1) | (old_carry << 7);
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, carry == 1);
+        self.set_flag(FlagRegister::Carry, new_carry == 1);
 
         return result;
     }
@@ -277,7 +287,6 @@ impl CPU {
 
         self.set_HL(result);
     }
-
 
     // adds to A with carry
     pub fn adc(&mut self, value: u8) {
@@ -389,8 +398,9 @@ impl CPU {
     }
 
     // Credit: https://blog.ollien.com/posts/gb-daa/
-    pub fn daa(&mut self) -> u8 {
+    pub fn daa(&mut self) {
         let mut offset: u8 = 0;
+        let mut should_carry = false;
 
         let half_carry = self.get_flag(FlagRegister::HalfCarry);
         let carry = self.get_flag(FlagRegister::Carry);
@@ -402,13 +412,18 @@ impl CPU {
     
         if (subtract == 0 && self.a > 0x99) || carry == 1 {
             offset |= 0x60;
+            should_carry = true;
         }
-    
-        return if subtract == 0 {
+
+        self.a = if subtract == 0 {
             self.a.wrapping_add(offset)
         } else {
             self.a.wrapping_sub(offset)
         };
+
+        self.set_flag(FlagRegister::Zero, self.a == 0);
+        self.set_flag(FlagRegister::HalfCarry, false);
+        self.set_flag(FlagRegister::Carry, should_carry);
     }
 
     pub fn execute(&mut self, opcode: u8) {
@@ -443,7 +458,7 @@ impl CPU {
             0x2E => self.l = arg_u8,
             0x32 => {
                 self.mmu.borrow_mut().write_byte(self.get_HL(), self.a);
-                self.set_HL(self.get_HL() + 1);
+                self.set_HL(self.get_HL() - 1);
             },
             0x36 => self.mmu.borrow_mut().write_byte(self.get_HL(), arg_u8),
             0x3A => {
@@ -534,6 +549,7 @@ impl CPU {
                 let temp = self.pop();
                 self.set_BC(temp);
             }
+            0xC5 => self.push(self.get_BC()),
             0xD1 => {
                 let temp = self.pop();
                 self.set_DE(temp);
@@ -709,7 +725,7 @@ impl CPU {
             // CPU control instructions
             0x00 => (),
             0x10 => self.stopped = true, 
-            0x27 => self.a = self.daa(),
+            0x27 => self.daa(),
             0x37 => {
                 self.set_flag(FlagRegister::Sub, false);
                 self.set_flag(FlagRegister::HalfCarry, false);
@@ -725,25 +741,25 @@ impl CPU {
             0xF3 => self.ime = false,
             0xFB => self.ime = true,
 
-            0x18 => self.pc = self.pc.wrapping_add(arg_u8 as u16),
+            0x18 => self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16),
             0x20 => {
                 if self.get_flag(FlagRegister::Zero) == 0 { 
-                    self.pc = self.pc.wrapping_add(arg_u8 as u16);
+                    self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
                 } 
             },
             0x28 => {
                 if self.get_flag(FlagRegister::Zero) == 1 { 
-                    self.pc = self.pc.wrapping_add(arg_u8 as u16);
+                    self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
                 } 
             },
             0x30 => {
                 if self.get_flag(FlagRegister::Carry) == 0 { 
-                    self.pc = self.pc.wrapping_add(arg_u8 as u16);
+                    self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
                 } 
             },
             0x38 => {
                 if self.get_flag(FlagRegister::Carry) == 1 { 
-                    self.pc = self.pc.wrapping_add(arg_u8 as u16);
+                    self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
                 } 
             },
             0xC0 => {
@@ -759,7 +775,7 @@ impl CPU {
             0xC3 => self.pc = arg_u16,
             0xC4 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
-                    self.push(self.pc + 2);
+                    self.push(self.pc);
                     self.pc = arg_u16;
                 }
             },
@@ -780,12 +796,12 @@ impl CPU {
             },
             0xCC => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
-                    self.push(self.pc + 2);
+                    self.push(self.pc);
                     self.pc = arg_u16;
                 }
             },
             0xCD => {
-                self.push(self.pc + 2);
+                self.push(self.pc);
                 self.pc = arg_u16;
             },
             0xD0 => {
@@ -800,7 +816,7 @@ impl CPU {
             },
             0xD4 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
-                    self.push(self.pc + 2);
+                    self.push(self.pc);
                     self.pc = arg_u16;
                 }
             },
@@ -825,7 +841,7 @@ impl CPU {
             },
             0xDC => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
-                    self.push(self.pc + 2);
+                    self.push(self.pc);
                     self.pc = arg_u16;
                 }
             },

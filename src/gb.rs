@@ -4,7 +4,6 @@ use std::cell::RefCell;
 
 use crate::cpu::CPU;
 use crate::mmu::MMU;
-use crate::consts::{OPCODES, CB_OPCODES};
 
 pub struct GB {
     pub cycles: i64,
@@ -28,17 +27,17 @@ impl GB {
 
     pub fn run(&mut self) {
         loop {
+            println!("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}", 
+                self.cpu.a, self.cpu.f, self.cpu.b, self.cpu.c, self.cpu.d, self.cpu.e, self.cpu.h, self.cpu.l, self.cpu.sp, self.cpu.pc,
+                self.mmu.borrow().read_byte(self.cpu.pc),
+                self.mmu.borrow().read_byte(self.cpu.pc + 1),
+                self.mmu.borrow().read_byte(self.cpu.pc + 2),
+                self.mmu.borrow().read_byte(self.cpu.pc + 3));
+
             let instruction = self.mmu.borrow().read_byte(self.cpu.pc.clone());
             
-            if instruction == 0xCB {
-                let cb_instruction = self.mmu.borrow().read_byte(self.cpu.pc + 1);
-                let mnemonic = CB_OPCODES[cb_instruction as usize].mnemonic;
-                // println!("PC: {:04X} OP: {:02X} {}", self.cpu.pc, cb_instruction, mnemonic);
-            } else {
-                let mnemonic = OPCODES[instruction as usize].mnemonic;
-                // println!("PC: {:04X} OP: {:02X} {}", self.cpu.pc, instruction, mnemonic);
-            }
             self.cpu.execute(instruction);
+
         }
     }
 }

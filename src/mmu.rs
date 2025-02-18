@@ -5,7 +5,7 @@ pub struct MMU {
 
 impl MMU {
     pub fn new(cart: Vec<u8>) -> MMU {
-        let ram = Vec::new();
+        let ram = vec![0; 0x10000];
         return MMU {
             ram: ram,
             cart: cart
@@ -18,14 +18,14 @@ impl MMU {
             0xFF44 => 0x90,
 
             0x0..0x7FFF => self.cart[addr as usize],
-            _ => 0xFF
+            _ => self.ram[addr as usize]
         }
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0x0..0x7FFF => self.cart[addr as usize] = value,
-            _ => ()
+            _ => self.ram[addr as usize] = value
         }
     }
 
