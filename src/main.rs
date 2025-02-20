@@ -4,11 +4,17 @@ mod mmu;
 mod consts;
 
 use gb::GB;
-fn main() {
-    // TODO: use clap to get command line args
-    // let rom_path = "./roms/01-special.gb";
-    let rom_path = "./roms/cpu_instrs/01-special.gb";
+use clap::Parser;
 
-    let mut gb = GB::new(rom_path.to_owned());
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(required = true)]
+    rom: String,
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let mut gb = GB::new(cli.rom);
     gb.run();
 }

@@ -16,7 +16,6 @@ impl MMU {
         match addr {
             // lock LCD for blargs tests
             0xFF44 => 0x90,
-
             0x0..0x7FFF => self.cart[addr as usize],
             _ => self.ram[addr as usize]
         }

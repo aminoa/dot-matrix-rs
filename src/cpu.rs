@@ -12,6 +12,51 @@ pub enum FlagRegister {
     Carry = 4
 }
 
+#[derive(Copy, Clone)]
+pub enum InterruptBit {
+    VBlank = 0,
+    LCD = 1,
+    Timer = 2,
+    Serial = 3,
+    Joypad = 4
+}
+
+pub enum InterruptSource {
+    VBlank = 0x40,
+    LCD = 0x48,
+    Timer = 0x50,
+    Serial = 0x58,
+    Joypad = 0x60,
+    InterruptFlag = 0xFF0F,
+    InterruptEnable = 0xFFFF
+}
+
+// DIV: incremented at 16384Hz, writing a value resets it to 0, stop instruction resets this
+// TIMA: timer incremented by TAC register; when overflowing (past 0xFF), it resets to value in TMA
+// TMA: as said, TIMA resets to this value and interrupt requested
+// TAC (Timer Control): enable bit, clock select bits (increments TIMA at different rates)
+
+pub enum TimerSource {
+    DividerRegister = 0xFF04, //DIV
+    TimerCounter = 0xFF05, //TIMA
+    TimerModulo = 0xFF06, //TMA
+    TimerControl = 0xFF07 //TAC
+}
+
+// Generates getters/setters for AF, BC, DE, HL registers
+macro_rules! register_access {
+    ($get_name:ident, $set_name:ident, $high:ident, $low:ident) => {
+        pub fn $get_name(&self) -> u16 {
+            return (self.$high as u16) << 8 | self.$low as u16;
+        }
+
+        pub fn $set_name(&mut self, value: u16) {
+            self.$high = (value >> 8) as u8;
+            self.$low = value as u8;
+        }
+    }
+}
+
 pub struct CPU {
     pub a: u8,
     pub f: u8,
@@ -67,51 +112,55 @@ impl CPU {
         }
     }
 
-    // helper functions; TODO: write a macro
-    pub fn get_AF(&self) -> u16 {
-        return (self.a as u16) << 8 | self.f as u16;
+    register_access!(get_af, set_af, a, f);
+    register_access!(get_bc, set_bc, b, c);
+    register_access!(get_de, set_de, d, e); 
+    register_access!(get_hl, set_hl, h, l);
+
+    pub fn update_timer(&self) {
+        let div = self.mmu.borrow().read_byte(0xFF04);
+        // self.mmu.borrow().write_byte(0xFF04, div.wrapping_add(1));
     }
 
-    pub fn set_AF(&mut self, value: u16) {
-        self.a = (value >> 8) as u8;
-        self.f = value as u8;
+    pub fn check_interrupts(&mut self) {
+        let interrupt_flag = self.mmu.borrow().read_byte(InterruptSource::InterruptFlag as u16);
+        let interrupt_enable = self.mmu.borrow().read_byte(InterruptSource::InterruptEnable as u16);
+
+        if self.ime && (interrupt_flag & interrupt_enable) != 0 {
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::VBlank);
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::LCD);
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Timer);
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Serial);
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Joypad);
+        }
     }
 
-    pub fn get_BC(&self) -> u16 {
-        return (self.b as u16) << 8 | self.c as u16;
-    }
+    pub fn handle_interrupt(&mut self, interrupt_flag: u8, interrupt_enable: u8, interrupt_bit: InterruptBit) {
+        if self.ime && (interrupt_flag & interrupt_enable & (1 << interrupt_bit as u8)) != 0 {
+            self.ime = false;
 
-    pub fn set_BC(&mut self, value: u16) {
-        self.b = (value >> 8) as u8;
-        self.c = value as u8;
-    }
+            let new_interrupt_flag = interrupt_flag & !(1 << interrupt_bit as u8);
+            self.mmu.borrow_mut().write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
 
-    pub fn get_DE(&self) -> u16 {
-        return (self.d as u16) << 8 | self.e as u16;
-    }
-
-    pub fn set_DE(&mut self, value: u16) {
-        self.d = (value >> 8) as u8;
-        self.e = value as u8;
-    }
-    
-    pub fn get_HL(&self) -> u16 {
-        return (self.h as u16) << 8 | self.l as u16;
-    }
-
-    pub fn set_HL(&mut self, value: u16) {
-        self.h = (value >> 8) as u8;
-        self.l = value as u8;
+            self.push(self.pc);
+            match interrupt_bit {
+                InterruptBit::VBlank => self.pc = InterruptSource::VBlank as u16,
+                InterruptBit::LCD => self.pc = InterruptSource::LCD as u16,
+                InterruptBit::Timer => self.pc = InterruptSource::Timer as u16,
+                InterruptBit::Serial => self.pc = InterruptSource::Serial as u16,
+                InterruptBit::Joypad => self.pc = InterruptSource::Joypad as u16,
+            }
+        }
     }
 
     pub fn pop(&mut self) -> u16 {
         let val = self.mmu.borrow().read_short(self.sp);
-        self.sp += 2;
+        self.sp = self.sp.wrapping_add(2);
         return val;
     }
 
     pub fn push(&mut self, value: u16) {
-        self.sp -= 2;
+        self.sp = self.sp.wrapping_sub(2);
         self.mmu.borrow_mut().write_short(self.sp, value);
     }
 
@@ -136,9 +185,8 @@ impl CPU {
     }
 
     pub fn rlca(&mut self) {
-        let old_carry = self.get_flag(FlagRegister::Carry);
         let new_carry = self.a >> 7;
-        self.a = (self.a << 1) | old_carry;
+        self.a = (self.a << 1) | new_carry;
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
@@ -147,9 +195,8 @@ impl CPU {
     }
 
     pub fn rrca(&mut self) {
-        let old_carry = self.get_flag(FlagRegister::Carry);
         let new_carry = self.a & 1;
-        self.a = (self.a >> 1) | (old_carry << 7);
+        self.a = (self.a >> 1) | (new_carry << 7);
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
@@ -180,9 +227,8 @@ impl CPU {
     }
 
     pub fn rlc(&mut self, reg: u8) -> u8 {
-        let old_carry = self.get_flag(FlagRegister::Carry);
         let new_carry = reg >> 7;
-        let result = (reg << 1) | old_carry;
+        let result = (reg << 1) | new_carry;
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
@@ -193,9 +239,8 @@ impl CPU {
     }
 
     pub fn rrc(&mut self, reg: u8) -> u8 {
-        let old_carry = self.get_flag(FlagRegister::Carry);
         let new_carry = reg & 1;
-        let result = (reg >> 1) | (old_carry << 7);
+        let result = (reg >> 1) | (new_carry << 7);
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
@@ -244,14 +289,13 @@ impl CPU {
     }
 
     pub fn sra(&mut self, reg: u8) -> u8 {
-        let old_carry = self.get_flag(FlagRegister::Carry);
-        let new_carry = reg & 1;
-        let result = (reg >> 1) | (old_carry << 7);
+        let new_carry = reg & 0x80;
+        let result = (reg >> 1) | new_carry;
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
         self.set_flag(FlagRegister::HalfCarry, false);
-        self.set_flag(FlagRegister::Carry, new_carry == 1);
+        self.set_flag(FlagRegister::Carry, (reg & 1) == 1);
 
         return result;
     }
@@ -279,13 +323,13 @@ impl CPU {
     }
 
     pub fn add_hl(&mut self, value: u16) {
-        let result = self.get_HL().wrapping_add(value);
+        let result = self.get_hl().wrapping_add(value);
 
         self.set_flag(FlagRegister::Sub, false);
-        self.set_flag(FlagRegister::HalfCarry, (self.get_HL() & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
-        self.set_flag(FlagRegister::Carry, (self.get_HL() as u32) + (value as u32) > 0xFFFF);
+        self.set_flag(FlagRegister::HalfCarry, (self.get_hl() & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
+        self.set_flag(FlagRegister::Carry, (self.get_hl() as u32) + (value as u32) > 0xFFFF);
 
-        self.set_HL(result);
+        self.set_hl(result);
     }
 
     // adds to A with carry
@@ -426,6 +470,12 @@ impl CPU {
         self.set_flag(FlagRegister::Carry, should_carry);
     }
 
+    pub fn cpl(&mut self) {
+        self.a = !self.a;
+        self.set_flag(FlagRegister::Sub, true);
+        self.set_flag(FlagRegister::HalfCarry, true);
+    }
+
     pub fn execute(&mut self, opcode: u8) {
         let arg_u8: u8 = self.mmu.borrow().read_byte(self.pc + 1);
         let arg_u16: u16 = self.mmu.borrow().read_short(self.pc + 1);
@@ -438,32 +488,32 @@ impl CPU {
 
         match opcode {
             // 8 bit load instructions
-            0x02 => self.mmu.borrow_mut().write_byte(self.get_BC(), self.a),
+            0x02 => self.mmu.borrow_mut().write_byte(self.get_bc(), self.a),
             0x06 => self.b = arg_u8,
-            0x0A => self.a = self.mmu.borrow().read_byte(self.get_BC()),
+            0x0A => self.a = self.mmu.borrow().read_byte(self.get_bc()),
             0x0E => self.c = arg_u8,
-            0x12 => self.mmu.borrow_mut().write_byte(self.get_DE(), self.a),
+            0x12 => self.mmu.borrow_mut().write_byte(self.get_de(), self.a),
             0x16 => self.d = arg_u8,
-            0x1A => self.a = self.mmu.borrow().read_byte(self.get_DE()),
+            0x1A => self.a = self.mmu.borrow().read_byte(self.get_de()),
             0x1E => self.e = arg_u8,
             0x22 => {
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.a);
-                self.set_HL(self.get_HL() + 1);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
+                self.set_hl(self.get_hl().wrapping_add(1));
             },
             0x26 => self.h = arg_u8,
             0x2A => {
-                self.a = self.mmu.borrow().read_byte(self.get_HL());
-                self.set_HL(self.get_HL() + 1);
+                self.a = self.mmu.borrow().read_byte(self.get_hl());
+                self.set_hl(self.get_hl().wrapping_add(1));
             },
             0x2E => self.l = arg_u8,
             0x32 => {
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.a);
-                self.set_HL(self.get_HL() - 1);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
+                self.set_hl(self.get_hl().wrapping_sub(1));
             },
-            0x36 => self.mmu.borrow_mut().write_byte(self.get_HL(), arg_u8),
+            0x36 => self.mmu.borrow_mut().write_byte(self.get_hl(), arg_u8),
             0x3A => {
-                self.a = self.mmu.borrow().read_byte(self.get_HL());
-                self.set_HL(self.get_HL() - 1);
+                self.a = self.mmu.borrow().read_byte(self.get_hl());
+                self.set_hl(self.get_hl().wrapping_sub(1));
             },
             0x3E => self.a = arg_u8,
 
@@ -473,7 +523,7 @@ impl CPU {
             0x43 => self.b = self.e,
             0x44 => self.b = self.h,
             0x45 => self.b = self.l,
-            0x46 => self.b = self.mmu.borrow().read_byte(self.get_HL()),
+            0x46 => self.b = self.mmu.borrow().read_byte(self.get_hl()),
             0x47 => self.b = self.a,
             0x48 => self.c = self.b,
             0x49 => self.c = self.c,
@@ -481,7 +531,7 @@ impl CPU {
             0x4B => self.c = self.e,
             0x4C => self.c = self.h,
             0x4D => self.c = self.l,
-            0x4E => self.c = self.mmu.borrow().read_byte(self.get_HL()),
+            0x4E => self.c = self.mmu.borrow().read_byte(self.get_hl()),
             0x4F => self.c = self.a,
             0x50 => self.d = self.b,
             0x51 => self.d = self.c,
@@ -489,7 +539,7 @@ impl CPU {
             0x53 => self.d = self.e,
             0x54 => self.d = self.h,
             0x55 => self.d = self.l,
-            0x56 => self.d = self.mmu.borrow().read_byte(self.get_HL()),
+            0x56 => self.d = self.mmu.borrow().read_byte(self.get_hl()),
             0x57 => self.d = self.a,
             0x58 => self.e = self.b,
             0x59 => self.e = self.c,
@@ -497,7 +547,7 @@ impl CPU {
             0x5B => self.e = self.e,
             0x5C => self.e = self.h,
             0x5D => self.e = self.l,
-            0x5E => self.e = self.mmu.borrow().read_byte(self.get_HL()),
+            0x5E => self.e = self.mmu.borrow().read_byte(self.get_hl()),
             0x5F => self.e = self.a,
             0x60 => self.h = self.b,
             0x61 => self.h = self.c,
@@ -505,7 +555,7 @@ impl CPU {
             0x63 => self.h = self.e,
             0x64 => self.h = self.h,
             0x65 => self.h = self.l,
-            0x66 => self.h = self.mmu.borrow().read_byte(self.get_HL()),
+            0x66 => self.h = self.mmu.borrow().read_byte(self.get_hl()),
             0x67 => self.h = self.a,
             0x68 => self.l = self.b,
             0x69 => self.l = self.c,
@@ -513,22 +563,22 @@ impl CPU {
             0x6B => self.l = self.e,
             0x6C => self.l = self.h,
             0x6D => self.l = self.l,
-            0x6E => self.l = self.mmu.borrow().read_byte(self.get_HL()),
+            0x6E => self.l = self.mmu.borrow().read_byte(self.get_hl()),
             0x6F => self.l = self.a,
-            0x70 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.b),
-            0x71 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.c),
-            0x72 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.d),
-            0x73 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.e),
-            0x74 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.h),
-            0x75 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.l),
-            0x77 => self.mmu.borrow_mut().write_byte(self.get_HL(), self.a),
+            0x70 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.b),
+            0x71 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.c),
+            0x72 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.d),
+            0x73 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.e),
+            0x74 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.h),
+            0x75 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.l),
+            0x77 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.a),
             0x78 => self.a = self.b,
             0x79 => self.a = self.c,
             0x7A => self.a = self.d,
             0x7B => self.a = self.e,
             0x7C => self.a = self.h,
             0x7D => self.a = self.l,
-            0x7E => self.a = self.mmu.borrow().read_byte(self.get_HL()),
+            0x7E => self.a = self.mmu.borrow().read_byte(self.get_hl()),
             0x7F => self.a = self.a,
 
             0xE0 => self.mmu.borrow_mut().write_byte(0xFF00 + arg_u8 as u16, self.a),
@@ -540,41 +590,41 @@ impl CPU {
             0xFA => self.a = self.mmu.borrow().read_byte(arg_u16),
 
             // 16 bit load instructions
-            0x01 => self.set_BC(arg_u16),
+            0x01 => self.set_bc(arg_u16),
             0x08 => self.mmu.borrow_mut().write_short(arg_u16, self.sp),
-            0x11 => self.set_DE(arg_u16),
-            0x21 => self.set_HL(arg_u16),
+            0x11 => self.set_de(arg_u16),
+            0x21 => self.set_hl(arg_u16),
             0x31 => self.sp = arg_u16,
             0xC1 => {
                 let temp = self.pop();
-                self.set_BC(temp);
+                self.set_bc(temp);
             }
-            0xC5 => self.push(self.get_BC()),
+            0xC5 => self.push(self.get_bc()),
             0xD1 => {
                 let temp = self.pop();
-                self.set_DE(temp);
+                self.set_de(temp);
             }
-            0xD5 => self.push(self.get_DE()),
+            0xD5 => self.push(self.get_de()),
             0xE1 => {
                 let temp = self.pop();
-                self.set_HL(temp);
+                self.set_hl(temp);
             },
-            0xE5 => self.push(self.get_HL()),
+            0xE5 => self.push(self.get_hl()),
             0xF1 => {
                 let temp = self.pop() & 0xFFF0;
-                self.set_AF(temp);
+                self.set_af(temp);
             },
-            0xF5 => self.push(self.get_AF()),
+            0xF5 => self.push(self.get_af()),
             0xF8 => {
-                let temp = self.sp + (arg_u8 as i8) as u16;
-                self.set_HL(temp);
+                let temp = self.sp.wrapping_add((arg_u8 as i8) as u16);
+                self.set_hl(temp);
 
                 self.set_flag(FlagRegister::Zero, false);
                 self.set_flag(FlagRegister::Sub, false);
-                self.set_flag(FlagRegister::HalfCarry, ((self.sp & 0x0F) + (arg_u8 as u16 & 0xFF)) > 0x0F);
+                self.set_flag(FlagRegister::HalfCarry, (self.sp & 0x0F) + (arg_u8 as u16 & 0x0F) > 0x0F);
                 self.set_flag(FlagRegister::Carry, (self.sp & 0xFF) + (arg_u8 as u16 & 0xFF) > 0xFF);
             },
-            0xF9 => self.sp = self.get_HL(),
+            0xF9 => self.sp = self.get_hl(),
 
             // 8 bit arithmetic/logical instructions
             0x04 => self.b = self.inc(self.b),
@@ -590,14 +640,14 @@ impl CPU {
             0x2C => self.l = self.inc(self.l),
             0x2D => self.l = self.dec(self.l),
             0x34 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let temp = self.inc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), temp);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
             },
             0x35 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let temp = self.dec(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), temp);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
             },
             0x3C => self.a = self.inc(self.a),
             0x3D => self.a = self.dec(self.a),
@@ -609,7 +659,7 @@ impl CPU {
             0x84 => self.add_a(self.h),
             0x85 => self.add_a(self.l),
             0x86 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.add_a(temp);
             },
             0x87 => self.add_a(self.a),
@@ -620,7 +670,7 @@ impl CPU {
             0x8C => self.adc(self.h),
             0x8D => self.adc(self.l),
             0x8E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.adc(temp);
             },
             0x8F => self.adc(self.a),
@@ -631,7 +681,7 @@ impl CPU {
             0x94 => self.sub(self.h),
             0x95 => self.sub(self.l),
             0x96 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.sub(temp);
             },
             0x97 => self.sub(self.a),
@@ -642,7 +692,7 @@ impl CPU {
             0x9C => self.sbc(self.h),
             0x9D => self.sbc(self.l),
             0x9E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.sbc(temp);
             },
             0x9F => self.sbc(self.a),
@@ -653,7 +703,7 @@ impl CPU {
             0xA4 => self.and(self.h),
             0xA5 => self.and(self.l),
             0xA6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.and(temp);
             },
             0xA7 => self.and(self.a),
@@ -664,7 +714,7 @@ impl CPU {
             0xAC => self.xor(self.h),
             0xAD => self.xor(self.l),
             0xAE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.xor(temp);
             },
             0xAF => self.xor(self.a),
@@ -675,7 +725,7 @@ impl CPU {
             0xB4 => self.or(self.h),
             0xB5 => self.or(self.l),
             0xB6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.or(temp);
             },
             0xB7 => self.or(self.a),
@@ -686,7 +736,7 @@ impl CPU {
             0xBC => self.cp(self.h),
             0xBD => self.cp(self.l),
             0xBE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.cp(temp);
             },
             0xBF => self.cp(self.a),
@@ -701,18 +751,18 @@ impl CPU {
             0xFE => self.cp(arg_u8),
 
             // 16-bit arithmetic/logic instructions
-            0x03 => self.set_BC(self.get_BC() + 1),
-            0x09 => self.add_hl(self.get_BC()),
-            0x0B => self.set_BC(self.get_BC() - 1),
-            0x13 => self.set_DE(self.get_DE() + 1),
-            0x19 => self.add_hl(self.get_DE()),
-            0x1B => self.set_DE(self.get_DE() - 1),
-            0x23 => self.set_HL(self.get_HL() + 1),
-            0x29 => self.add_hl(self.get_HL()),
-            0x2B => self.set_HL(self.get_HL() - 1),
-            0x33 => self.sp += 1,
+            0x03 => self.set_bc(self.get_bc().wrapping_add(1)),
+            0x09 => self.add_hl(self.get_bc()),
+            0x0B => self.set_bc(self.get_bc().wrapping_sub(1)),
+            0x13 => self.set_de(self.get_de().wrapping_add(1)),
+            0x19 => self.add_hl(self.get_de()),
+            0x1B => self.set_de(self.get_de().wrapping_sub(1)),
+            0x23 => self.set_hl(self.get_hl().wrapping_add(1)),
+            0x29 => self.add_hl(self.get_hl()),
+            0x2B => self.set_hl(self.get_hl().wrapping_sub(1)),
+            0x33 => self.sp = self.sp.wrapping_add(1),
             0x39 => self.add_hl(self.sp),
-            0x3B => self.sp -= 1,
+            0x3B => self.sp = self.sp.wrapping_sub(1),
             0xE8 => self.add_signed(arg_u8 as i8),
 
             // 8-bit shift, rotate, and bit instructions
@@ -726,6 +776,7 @@ impl CPU {
             0x00 => (),
             0x10 => self.stopped = true, 
             0x27 => self.daa(),
+            0x2F => self.cpl(),
             0x37 => {
                 self.set_flag(FlagRegister::Sub, false);
                 self.set_flag(FlagRegister::HalfCarry, false);
@@ -804,6 +855,10 @@ impl CPU {
                 self.push(self.pc);
                 self.pc = arg_u16;
             },
+            0xCF => {
+                self.push(self.pc);
+                self.pc = 0x08;
+            },
             0xD0 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
                     self.pc = self.pop();
@@ -853,7 +908,7 @@ impl CPU {
                 self.push(self.pc);
                 self.pc = 0x20;
             },
-            0xE9 => self.pc = self.get_HL(),
+            0xE9 => self.pc = self.get_hl(),
             0xEF => {
                 self.push(self.pc);
                 self.pc = 0x28;
@@ -866,8 +921,8 @@ impl CPU {
                 self.push(self.pc);
                 self.pc = 0x38;
             },
-            
-            _ => println!("Error: Opcode unknown: {:X}; something has gone seriously wrong", opcode),
+            _ => unreachable!()
+            // _ => println!("Error: Opcode unknown: {:X}; something has gone seriously wrong", opcode),
         }
     }
 
@@ -880,9 +935,9 @@ impl CPU {
             0x04 => self.h = self.rlc(self.h),
             0x05 => self.l = self.rlc(self.l),
             0x06 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rlc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x07 => self.a = self.rlc(self.a),
             0x08 => self.b = self.rrc(self.b),
@@ -892,9 +947,9 @@ impl CPU {
             0x0C => self.h = self.rrc(self.h),
             0x0D => self.l = self.rrc(self.l),
             0x0E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rrc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x0F => self.a = self.rrc(self.a),
 
@@ -905,9 +960,9 @@ impl CPU {
             0x14 => self.h = self.rl(self.h),
             0x15 => self.l = self.rl(self.l),
             0x16 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rl(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x17 => self.a = self.rl(self.a),
             0x18 => self.b = self.rr(self.b),
@@ -917,9 +972,9 @@ impl CPU {
             0x1C => self.h = self.rr(self.h),
             0x1D => self.l = self.rr(self.l),
             0x1E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rr(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x1F => self.a = self.rr(self.a),
 
@@ -930,9 +985,9 @@ impl CPU {
             0x24 => self.h = self.sla(self.h),
             0x25 => self.l = self.sla(self.l),
             0x26 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.sla(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x27 => self.a = self.sla(self.a),
             0x28 => self.b = self.sra(self.b),
@@ -942,9 +997,9 @@ impl CPU {
             0x2C => self.h = self.sra(self.h),
             0x2D => self.l = self.sra(self.l),
             0x2E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.sra(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x2F => self.a = self.sra(self.a),
 
@@ -955,9 +1010,9 @@ impl CPU {
             0x34 => self.h = self.swap(self.h),
             0x35 => self.l = self.swap(self.l),
             0x36 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.swap(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x37 => self.a = self.swap(self.a),
             0x38 => self.b = self.srl(self.b),  
@@ -967,9 +1022,9 @@ impl CPU {
             0x3C => self.h = self.srl(self.h),
             0x3D => self.l = self.srl(self.l),
             0x3E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.srl(temp);
-                self.mmu.borrow_mut().write_byte(self.get_HL(), result);
+                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
             },
             0x3F => self.a = self.srl(self.a),
 
@@ -980,7 +1035,7 @@ impl CPU {
             0x44 => self.bit(0, self.h),
             0x45 => self.bit(0, self.l),
             0x46 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(0, temp);
             },
             0x47 => self.bit(0, self.a),
@@ -991,7 +1046,7 @@ impl CPU {
             0x4C => self.bit(1, self.h),
             0x4D => self.bit(1, self.l),
             0x4E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(1, temp);
             },
             0x4F => self.bit(1, self.a),
@@ -1003,7 +1058,7 @@ impl CPU {
             0x54 => self.bit(2, self.h),
             0x55 => self.bit(2, self.l),
             0x56 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(2, temp);
             },
             0x57 => self.bit(2, self.a),
@@ -1014,7 +1069,7 @@ impl CPU {
             0x5C => self.bit(3, self.h),
             0x5D => self.bit(3, self.l),
             0x5E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(3, temp);
             },
             0x5F => self.bit(3, self.a),
@@ -1026,7 +1081,7 @@ impl CPU {
             0x64 => self.bit(4, self.h),
             0x65 => self.bit(4, self.l),
             0x66 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(4, temp);
             },
             0x67 => self.bit(4, self.a),
@@ -1037,7 +1092,7 @@ impl CPU {
             0x6C => self.bit(5, self.h),
             0x6D => self.bit(5, self.l),
             0x6E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(5, temp);
             },
             0x6F => self.bit(5, self.a),
@@ -1049,7 +1104,7 @@ impl CPU {
             0x74 => self.bit(6, self.h),
             0x75 => self.bit(6, self.l),
             0x76 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(6, temp);
             },
             0x77 => self.bit(6, self.a),
@@ -1060,7 +1115,7 @@ impl CPU {
             0x7C => self.bit(7, self.h),
             0x7D => self.bit(7, self.l),
             0x7E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(7, temp);
             },
             0x7F => self.bit(7, self.a),
@@ -1072,8 +1127,8 @@ impl CPU {
             0x84 => self.h = self.res(0, self.h),
             0x85 => self.l = self.res(0, self.l),
             0x86 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(0, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(0, temp));
             },
             0x87 => self.a = self.res(0, self.a),
             0x88 => self.b = self.res(1, self.b),
@@ -1083,8 +1138,8 @@ impl CPU {
             0x8C => self.h = self.res(1, self.h),
             0x8D => self.l = self.res(1, self.l),
             0x8E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(1, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(1, temp));
             },
             0x8F => self.a = self.res(1, self.a),
 
@@ -1095,8 +1150,8 @@ impl CPU {
             0x94 => self.h = self.res(2, self.h),
             0x95 => self.l = self.res(2, self.l),
             0x96 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(2, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(2, temp));
             },
             0x97 => self.a = self.res(2, self.a),
 
@@ -1107,8 +1162,8 @@ impl CPU {
             0x9C => self.h = self.res(3, self.h),
             0x9D => self.l = self.res(3, self.l),
             0x9E => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(3, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(3, temp));
             },
             0x9F => self.a = self.res(3, self.a),
 
@@ -1119,8 +1174,8 @@ impl CPU {
             0xA4 => self.h = self.res(4, self.h),
             0xA5 => self.l = self.res(4, self.l),
             0xA6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(4, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(4, temp));
             },
             0xA7 => self.a = self.res(4, self.a),
             0xA8 => self.b = self.res(5, self.b),
@@ -1130,8 +1185,8 @@ impl CPU {
             0xAC => self.h = self.res(5, self.h),
             0xAD => self.l = self.res(5, self.l),
             0xAE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(5, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(5, temp));
             },
             0xAF => self.a = self.res(5, self.a),
 
@@ -1142,8 +1197,8 @@ impl CPU {
             0xB4 => self.h = self.res(6, self.h),
             0xB5 => self.l = self.res(6, self.l),
             0xB6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(6, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(6, temp));
             },
             0xB7 => self.a = self.res(6, self.a),
 
@@ -1154,8 +1209,8 @@ impl CPU {
             0xBC => self.h = self.res(7, self.h),
             0xBD => self.l = self.res(7, self.l),
             0xBE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.res(7, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(7, temp));
             },
             0xBF => self.a = self.res(7, self.a),
 
@@ -1166,8 +1221,8 @@ impl CPU {
             0xC4 => self.h = self.set(0, self.h),
             0xC5 => self.l = self.set(0, self.l),
             0xC6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(0, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(0, temp));
             },
             0xC7 => self.a = self.set(0, self.a),
 
@@ -1178,8 +1233,8 @@ impl CPU {
             0xCC => self.h = self.set(1, self.h),
             0xCD => self.l = self.set(1, self.l),
             0xCE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(1, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(1, temp));
             },
             0xCF => self.a = self.set(1, self.a),
 
@@ -1190,8 +1245,8 @@ impl CPU {
             0xD4 => self.h = self.set(2, self.h),
             0xD5 => self.l = self.set(2, self.l),
             0xD6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(2, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(2, temp));
             },
             0xD7 => self.a = self.set(2, self.a),
 
@@ -1202,8 +1257,8 @@ impl CPU {
             0xDC => self.h = self.set(3, self.h),
             0xDD => self.l = self.set(3, self.l),
             0xDE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(3, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(3, temp));
             },
             0xDF => self.a = self.set(3, self.a),
 
@@ -1214,8 +1269,8 @@ impl CPU {
             0xE4 => self.h = self.set(4, self.h),
             0xE5 => self.l = self.set(4, self.l),
             0xE6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(4, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(4, temp));
             },
             0xE7 => self.a = self.set(4, self.a),
 
@@ -1226,8 +1281,8 @@ impl CPU {
             0xEC => self.h = self.set(5, self.h),
             0xED => self.l = self.set(5, self.l),
             0xEE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(5, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(5, temp));
             },
             0xEF => self.a = self.set(5, self.a),
 
@@ -1238,8 +1293,8 @@ impl CPU {
             0xF4 => self.h = self.set(6, self.h),
             0xF5 => self.l = self.set(6, self.l),
             0xF6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(6, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(6, temp));
             },
             0xF7 => self.a = self.set(6, self.a),
 
@@ -1250,8 +1305,8 @@ impl CPU {
             0xFC => self.h = self.set(7, self.h),
             0xFD => self.l = self.set(7, self.l),
             0xFE => {
-                let temp = self.mmu.borrow().read_byte(self.get_HL());
-                self.mmu.borrow_mut().write_byte(self.get_HL(), self.set(7, temp));
+                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(7, temp));
             },
             0xFF => self.a = self.set(7, self.a),
         }
