@@ -4,6 +4,9 @@ use std::cell::RefCell;
 
 use crate::consts::{OPCODES, CB_OPCODES};
 
+pub const CPU_CLOCK_SPEED: u32 = 4_194_304;
+pub const DIVIDER_CLOCK_SPEED: u32 = 16_384;
+
 #[derive(Copy, Clone)]
 pub enum FlagRegister {
     Zero = 7,
@@ -30,11 +33,6 @@ pub enum InterruptSource {
     InterruptFlag = 0xFF0F,
     InterruptEnable = 0xFFFF
 }
-
-// DIV: incremented at 16384Hz, writing a value resets it to 0, stop instruction resets this
-// TIMA: timer incremented by TAC register; when overflowing (past 0xFF), it resets to value in TMA
-// TMA: as said, TIMA resets to this value and interrupt requested
-// TAC (Timer Control): enable bit, clock select bits (increments TIMA at different rates)
 
 pub enum TimerSource {
     DividerRegister = 0xFF04, //DIV
@@ -74,6 +72,8 @@ pub struct CPU {
     pub stopped: bool,
     pub halted: bool,
 
+    pub div_timer: u32,
+    pub tima_timer: u32,
     pub mmu: Rc<RefCell<MMU>>
 }
 
@@ -96,6 +96,8 @@ impl CPU {
             stopped: false,
             halted: false,
 
+            div_timer: 0,
+            tima_timer: 0,
             mmu: mmu
         }
     }
@@ -117,9 +119,61 @@ impl CPU {
     register_access!(get_de, set_de, d, e); 
     register_access!(get_hl, set_hl, h, l);
 
-    pub fn update_timer(&self) {
-        let div = self.mmu.borrow().read_byte(0xFF04);
-        // self.mmu.borrow().write_byte(0xFF04, div.wrapping_add(1));
+    pub fn update_timers(&mut self, current_cycles: u32) {
+
+        // First Timer: DIV: incremented at 16384Hz
+        // GB CPU Clock: 4.194304 MHz
+        // 4.194304 MHz / 16384 Hz = 256 clocks per DIV increment
+
+        let mut div = self.mmu.borrow().read_byte(TimerSource::DividerRegister as u16);
+        self.div_timer = self.div_timer.wrapping_add(current_cycles);
+        if self.div_timer >= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED {
+            div = div.wrapping_add(1);
+            self.div_timer -= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED;
+        }
+        self.mmu.borrow_mut().write_byte(TimerSource::DividerRegister as u16, div);
+
+        // Second Timer: TIMA: incremented at frequency specified by TAC register 
+        // TAC: clock select bits (increments TIMA at different rates)
+        
+        let tac = self.mmu.borrow().read_byte(TimerSource::TimerControl as u16);
+        let tima = self.mmu.borrow().read_byte(TimerSource::TimerCounter as u16);
+        let tma = self.mmu.borrow().read_byte(TimerSource::TimerModulo as u16);
+        let clock_select = tac & 0b00000011;
+
+        let clock_freq = match clock_select {
+            0b00 => 1024,
+            0b01 => 16,
+            0b10 => 64,
+            0b11 => 256,
+            _ => 1024
+        };
+
+        let timer_enabled = (tac & 0b100) != 0;
+
+        if timer_enabled {
+            self.tima_timer = self.tima_timer.wrapping_add(current_cycles);
+            
+            if self.tima_timer >= CPU_CLOCK_SPEED / clock_freq {
+                self.tima_timer -= CPU_CLOCK_SPEED / clock_freq;
+                
+                let new_tima = tima.wrapping_add(1);
+                
+                // Fire interrupt if TIMA overflows
+                if new_tima == 0 {
+                    // Reset TIMA to TMA value
+                    self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, tma);
+                    
+                    let interrupt_flag = self.mmu.borrow().read_byte(InterruptSource::InterruptFlag as u16);
+                    self.mmu.borrow_mut().write_byte(
+                        InterruptSource::InterruptFlag as u16,
+                        interrupt_flag | (1 << InterruptBit::Timer as u8)
+                    );
+                } else {
+                    self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, new_tima);
+                }
+            }
+        }
     }
 
     pub fn check_interrupts(&mut self) {

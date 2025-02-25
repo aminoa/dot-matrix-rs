@@ -23,13 +23,15 @@ impl MMU {
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
         match addr {
+            // DIV writes should be trapped
+            0xFF04 => self.ram[addr as usize] = 0,
             0x0..0x7FFF => self.cart[addr as usize] = value,
             _ => self.ram[addr as usize] = value
         }
     }
 
     pub fn read_short(&self, addr: u16) -> u16 {
-        return (self.read_byte(addr) as u16) | (self.read_byte(addr + 1) as u16) << 8;
+        (self.read_byte(addr) as u16) | (self.read_byte(addr + 1) as u16) << 8
     }
 
     pub fn write_short(&mut self, addr: u16, value: u16) {

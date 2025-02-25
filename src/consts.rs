@@ -522,3 +522,7 @@ pub const CB_OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xFE, mnemonic: "RES", bytes: 2, cycles: &[12] },
     Opcode { opcode: 0xFF, mnemonic: "RES", bytes: 2, cycles: &[8] }
 ];
+
+pub const CLOCK_SPEED: u32 = 4_194_304; // 4.194304 MHz
+pub const FRAME_RATE: f32 = 59.72746; // 59.72746 Hz
+pub const CYCLES_PER_FRAME: u32 = (CLOCK_SPEED as f32 / FRAME_RATE) as u32; // ~69905 cycles per frame
