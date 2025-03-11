@@ -1,8 +1,7 @@
 use crate::mmu::MMU;
 use std::rc::Rc;
 use std::cell::RefCell;
-
-use crate::consts::{OPCODES, CB_OPCODES};
+use crate::consts::{CB_OPCODES, OPCODES};
 
 pub const CPU_CLOCK_SPEED: u32 = 4_194_304;
 pub const DIVIDER_CLOCK_SPEED: u32 = 16_384;
@@ -119,14 +118,14 @@ impl CPU {
     register_access!(get_de, set_de, d, e); 
     register_access!(get_hl, set_hl, h, l);
 
-    pub fn update_timers(&mut self, current_cycles: u32) {
+    pub fn update_timers(&mut self, instruction_cycles: u32) {
 
         // First Timer: DIV: incremented at 16384Hz
         // GB CPU Clock: 4.194304 MHz
         // 4.194304 MHz / 16384 Hz = 256 clocks per DIV increment
 
         let mut div = self.mmu.borrow().read_byte(TimerSource::DividerRegister as u16);
-        self.div_timer = self.div_timer.wrapping_add(current_cycles);
+        self.div_timer = self.div_timer.wrapping_add(instruction_cycles);
         if self.div_timer >= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED {
             div = div.wrapping_add(1);
             self.div_timer -= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED;
@@ -152,7 +151,7 @@ impl CPU {
         let timer_enabled = (tac & 0b100) != 0;
 
         if timer_enabled {
-            self.tima_timer = self.tima_timer.wrapping_add(current_cycles);
+            self.tima_timer = self.tima_timer.wrapping_add(instruction_cycles);
             
             if self.tima_timer >= CPU_CLOCK_SPEED / clock_freq {
                 self.tima_timer -= CPU_CLOCK_SPEED / clock_freq;
@@ -530,7 +529,7 @@ impl CPU {
         self.set_flag(FlagRegister::HalfCarry, true);
     }
 
-    pub fn execute(&mut self, opcode: u8) {
+    pub fn execute(&mut self, opcode: u8) -> u8 {
         let arg_u8: u8 = self.mmu.borrow().read_byte(self.pc + 1);
         let arg_u16: u16 = self.mmu.borrow().read_short(self.pc + 1);
 
@@ -539,136 +538,143 @@ impl CPU {
         } else {
             self.pc += OPCODES[opcode as usize].bytes as u16;
         }
-
         match opcode {
             // 8 bit load instructions
-            0x02 => self.mmu.borrow_mut().write_byte(self.get_bc(), self.a),
-            0x06 => self.b = arg_u8,
-            0x0A => self.a = self.mmu.borrow().read_byte(self.get_bc()),
-            0x0E => self.c = arg_u8,
-            0x12 => self.mmu.borrow_mut().write_byte(self.get_de(), self.a),
-            0x16 => self.d = arg_u8,
-            0x1A => self.a = self.mmu.borrow().read_byte(self.get_de()),
-            0x1E => self.e = arg_u8,
+            0x02 => { self.mmu.borrow_mut().write_byte(self.get_bc(), self.a); 8 },
+            0x06 => { self.b = arg_u8; 8 },
+            0x0A => { self.a = self.mmu.borrow().read_byte(self.get_bc()); 8 },
+            0x0E => { self.c = arg_u8; 8 },
+            0x12 => { self.mmu.borrow_mut().write_byte(self.get_de(), self.a); 8 },
+            0x16 => { self.d = arg_u8; 8 },
+            0x1A => { self.a = self.mmu.borrow().read_byte(self.get_de()); 8 },
+            0x1E => { self.e = arg_u8; 8 },
             0x22 => {
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
                 self.set_hl(self.get_hl().wrapping_add(1));
+                8
             },
-            0x26 => self.h = arg_u8,
+            0x26 => { self.h = arg_u8; 8 },
             0x2A => {
                 self.a = self.mmu.borrow().read_byte(self.get_hl());
                 self.set_hl(self.get_hl().wrapping_add(1));
+                8
             },
-            0x2E => self.l = arg_u8,
+            0x2E => { self.l = arg_u8; 8 },
             0x32 => {
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
                 self.set_hl(self.get_hl().wrapping_sub(1));
+                8
             },
-            0x36 => self.mmu.borrow_mut().write_byte(self.get_hl(), arg_u8),
+            0x36 => { self.mmu.borrow_mut().write_byte(self.get_hl(), arg_u8); 12 },
             0x3A => {
                 self.a = self.mmu.borrow().read_byte(self.get_hl());
                 self.set_hl(self.get_hl().wrapping_sub(1));
+                8
             },
-            0x3E => self.a = arg_u8,
+            0x3E => { self.a = arg_u8; 8 },
 
-            0x40 => self.b = self.b,
-            0x41 => self.b = self.c,
-            0x42 => self.b = self.d,
-            0x43 => self.b = self.e,
-            0x44 => self.b = self.h,
-            0x45 => self.b = self.l,
-            0x46 => self.b = self.mmu.borrow().read_byte(self.get_hl()),
-            0x47 => self.b = self.a,
-            0x48 => self.c = self.b,
-            0x49 => self.c = self.c,
-            0x4A => self.c = self.d,
-            0x4B => self.c = self.e,
-            0x4C => self.c = self.h,
-            0x4D => self.c = self.l,
-            0x4E => self.c = self.mmu.borrow().read_byte(self.get_hl()),
-            0x4F => self.c = self.a,
-            0x50 => self.d = self.b,
-            0x51 => self.d = self.c,
-            0x52 => self.d = self.d,
-            0x53 => self.d = self.e,
-            0x54 => self.d = self.h,
-            0x55 => self.d = self.l,
-            0x56 => self.d = self.mmu.borrow().read_byte(self.get_hl()),
-            0x57 => self.d = self.a,
-            0x58 => self.e = self.b,
-            0x59 => self.e = self.c,
-            0x5A => self.e = self.d,
-            0x5B => self.e = self.e,
-            0x5C => self.e = self.h,
-            0x5D => self.e = self.l,
-            0x5E => self.e = self.mmu.borrow().read_byte(self.get_hl()),
-            0x5F => self.e = self.a,
-            0x60 => self.h = self.b,
-            0x61 => self.h = self.c,
-            0x62 => self.h = self.d,
-            0x63 => self.h = self.e,
-            0x64 => self.h = self.h,
-            0x65 => self.h = self.l,
-            0x66 => self.h = self.mmu.borrow().read_byte(self.get_hl()),
-            0x67 => self.h = self.a,
-            0x68 => self.l = self.b,
-            0x69 => self.l = self.c,
-            0x6A => self.l = self.d,
-            0x6B => self.l = self.e,
-            0x6C => self.l = self.h,
-            0x6D => self.l = self.l,
-            0x6E => self.l = self.mmu.borrow().read_byte(self.get_hl()),
-            0x6F => self.l = self.a,
-            0x70 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.b),
-            0x71 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.c),
-            0x72 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.d),
-            0x73 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.e),
-            0x74 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.h),
-            0x75 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.l),
-            0x77 => self.mmu.borrow_mut().write_byte(self.get_hl(), self.a),
-            0x78 => self.a = self.b,
-            0x79 => self.a = self.c,
-            0x7A => self.a = self.d,
-            0x7B => self.a = self.e,
-            0x7C => self.a = self.h,
-            0x7D => self.a = self.l,
-            0x7E => self.a = self.mmu.borrow().read_byte(self.get_hl()),
-            0x7F => self.a = self.a,
+            0x40 => { self.b = self.b; 4 },
+            0x41 => { self.b = self.c; 4 },
+            0x42 => { self.b = self.d; 4 },
+            0x43 => { self.b = self.e; 4 },
+            0x44 => { self.b = self.h; 4 },
+            0x45 => { self.b = self.l; 4 },
+            0x46 => { self.b = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x47 => { self.b = self.a; 4 },
+            0x48 => { self.c = self.b; 4 },
+            0x49 => { self.c = self.c; 4 },
+            0x4A => { self.c = self.d; 4 },
+            0x4B => { self.c = self.e; 4 },
+            0x4C => { self.c = self.h; 4 },
+            0x4D => { self.c = self.l; 4 },
+            0x4E => { self.c = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x4F => { self.c = self.a; 4 },
+            0x50 => { self.d = self.b; 4 },
+            0x51 => { self.d = self.c; 4 },
+            0x52 => { self.d = self.d; 4 },
+            0x53 => { self.d = self.e; 4 },
+            0x54 => { self.d = self.h; 4 },
+            0x55 => { self.d = self.l; 4 },
+            0x56 => { self.d = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x57 => { self.d = self.a; 4 },
+            0x58 => { self.e = self.b; 4 },
+            0x59 => { self.e = self.c; 4 },
+            0x5A => { self.e = self.d; 4 },
+            0x5B => { self.e = self.e; 4 },
+            0x5C => { self.e = self.h; 4 },
+            0x5D => { self.e = self.l; 4 },
+            0x5E => { self.e = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x5F => { self.e = self.a; 4 },
+            0x60 => { self.h = self.b; 4 },
+            0x61 => { self.h = self.c; 4 },
+            0x62 => { self.h = self.d; 4 },
+            0x63 => { self.h = self.e; 4 },
+            0x64 => { self.h = self.h; 4 },
+            0x65 => { self.h = self.l; 4 },
+            0x66 => { self.h = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x67 => { self.h = self.a; 4 },
+            0x68 => { self.l = self.b; 4 },
+            0x69 => { self.l = self.c; 4 },
+            0x6A => { self.l = self.d; 4 },
+            0x6B => { self.l = self.e; 4 },
+            0x6C => { self.l = self.h; 4 },
+            0x6D => { self.l = self.l; 4 },
+            0x6E => { self.l = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x6F => { self.l = self.a; 4 },
+            0x70 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.b); 8 },
+            0x71 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.c); 8 },
+            0x72 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.d); 8 },
+            0x73 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.e); 8 },
+            0x74 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.h); 8 },
+            0x75 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.l); 8 },
+            0x77 => { self.mmu.borrow_mut().write_byte(self.get_hl(), self.a); 8 },
+            0x78 => { self.a = self.b; 4 },
+            0x79 => { self.a = self.c; 4 },
+            0x7A => { self.a = self.d; 4 },
+            0x7B => { self.a = self.e; 4 },
+            0x7C => { self.a = self.h; 4 },
+            0x7D => { self.a = self.l; 4 },
+            0x7E => { self.a = self.mmu.borrow().read_byte(self.get_hl()); 8 },
+            0x7F => { self.a = self.a; 4 },
 
-            0xE0 => self.mmu.borrow_mut().write_byte(0xFF00 + arg_u8 as u16, self.a),
-            0xE2 => self.mmu.borrow_mut().write_byte(0xFF00 + self.c as u16, self.a),
+            0xE0 => { self.mmu.borrow_mut().write_byte(0xFF00 + arg_u8 as u16, self.a); 12 },
+            0xE2 => { self.mmu.borrow_mut().write_byte(0xFF00 + self.c as u16, self.a); 8 },
 
-            0xEA => self.mmu.borrow_mut().write_byte(arg_u16, self.a),
-            0xF0 => self.a = self.mmu.borrow().read_byte(0xFF00 + arg_u8 as u16),
-            0xF2 => self.a = self.mmu.borrow().read_byte(0xFF00 + self.c as u16),
-            0xFA => self.a = self.mmu.borrow().read_byte(arg_u16),
+            0xEA => { self.mmu.borrow_mut().write_byte(arg_u16, self.a); 12 },
+            0xF0 => { self.a = self.mmu.borrow().read_byte(0xFF00 + arg_u8 as u16); 8 },
+            0xF2 => { self.a = self.mmu.borrow().read_byte(0xFF00 + self.c as u16); 8 },
+            0xFA => { self.a = self.mmu.borrow().read_byte(arg_u16); 8 },
 
             // 16 bit load instructions
-            0x01 => self.set_bc(arg_u16),
-            0x08 => self.mmu.borrow_mut().write_short(arg_u16, self.sp),
-            0x11 => self.set_de(arg_u16),
-            0x21 => self.set_hl(arg_u16),
-            0x31 => self.sp = arg_u16,
+            0x01 => { self.set_bc(arg_u16); 12 },
+            0x08 => { self.mmu.borrow_mut().write_short(arg_u16, self.sp); 20 },
+            0x11 => { self.set_de(arg_u16); 12 },
+            0x21 => { self.set_hl(arg_u16); 12 },
+            0x31 => { self.sp = arg_u16; 12 },
             0xC1 => {
                 let temp = self.pop();
                 self.set_bc(temp);
-            }
-            0xC5 => self.push(self.get_bc()),
+                12
+            },
+            0xC5 => { self.push(self.get_bc()); 16 },
             0xD1 => {
                 let temp = self.pop();
                 self.set_de(temp);
-            }
-            0xD5 => self.push(self.get_de()),
+                12
+            },
+            0xD5 => { self.push(self.get_de()); 16 },
             0xE1 => {
                 let temp = self.pop();
                 self.set_hl(temp);
+                12
             },
-            0xE5 => self.push(self.get_hl()),
+            0xE5 => { self.push(self.get_hl()); 16 },
             0xF1 => {
                 let temp = self.pop() & 0xFFF0;
                 self.set_af(temp);
+                12
             },
-            0xF5 => self.push(self.get_af()),
+            0xF5 => { self.push(self.get_af()); 16 },
             0xF8 => {
                 let temp = self.sp.wrapping_add((arg_u8 as i8) as u16);
                 self.set_hl(temp);
@@ -677,303 +683,374 @@ impl CPU {
                 self.set_flag(FlagRegister::Sub, false);
                 self.set_flag(FlagRegister::HalfCarry, (self.sp & 0x0F) + (arg_u8 as u16 & 0x0F) > 0x0F);
                 self.set_flag(FlagRegister::Carry, (self.sp & 0xFF) + (arg_u8 as u16 & 0xFF) > 0xFF);
+                12
             },
-            0xF9 => self.sp = self.get_hl(),
+            0xF9 => { self.sp = self.get_hl(); 8 },
 
             // 8 bit arithmetic/logical instructions
-            0x04 => self.b = self.inc(self.b),
-            0x05 => self.b = self.dec(self.b),
-            0x0C => self.c = self.inc(self.c),
-            0x0D => self.c = self.dec(self.c),
-            0x14 => self.d = self.inc(self.d),
-            0x15 => self.d = self.dec(self.d),
-            0x1C => self.e = self.inc(self.e),
-            0x1D => self.e = self.dec(self.e),
-            0x24 => self.h = self.inc(self.h),
-            0x25 => self.h = self.dec(self.h),
-            0x2C => self.l = self.inc(self.l),
-            0x2D => self.l = self.dec(self.l),
+            0x04 => { self.b = self.inc(self.b); 4 },
+            0x05 => { self.b = self.dec(self.b); 4 },
+            0x0C => { self.c = self.inc(self.c); 4 },
+            0x0D => { self.c = self.dec(self.c); 4 },
+            0x14 => { self.d = self.inc(self.d); 4 },
+            0x15 => { self.d = self.dec(self.d); 4 },
+            0x1C => { self.e = self.inc(self.e); 4 },
+            0x1D => { self.e = self.dec(self.e); 4 },
+            0x24 => { self.h = self.inc(self.h); 4 },
+            0x25 => { self.h = self.dec(self.h); 4 },
+            0x2C => { self.l = self.inc(self.l); 4 },
+            0x2D => { self.l = self.dec(self.l); 4 },
             0x34 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let temp = self.inc(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
+                12
             },
             0x35 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let temp = self.dec(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
+                12
             },
-            0x3C => self.a = self.inc(self.a),
-            0x3D => self.a = self.dec(self.a),
+            0x3C => { self.a = self.inc(self.a); 4 },
+            0x3D => { self.a = self.dec(self.a); 4 },
 
-            0x80 => self.add_a(self.b),
-            0x81 => self.add_a(self.c),
-            0x82 => self.add_a(self.d),
-            0x83 => self.add_a(self.e),
-            0x84 => self.add_a(self.h),
-            0x85 => self.add_a(self.l),
+            0x80 => { self.add_a(self.b); 4 },
+            0x81 => { self.add_a(self.c); 4 },
+            0x82 => { self.add_a(self.d); 4 },
+            0x83 => { self.add_a(self.e); 4 },
+            0x84 => { self.add_a(self.h); 4 },
+            0x85 => { self.add_a(self.l); 4 },
             0x86 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.add_a(temp);
+                8
             },
-            0x87 => self.add_a(self.a),
-            0x88 => self.adc(self.b),
-            0x89 => self.adc(self.c),
-            0x8A => self.adc(self.d),
-            0x8B => self.adc(self.e),
-            0x8C => self.adc(self.h),
-            0x8D => self.adc(self.l),
+            0x87 => { self.add_a(self.a); 4 },
+            0x88 => { self.adc(self.b); 4 },
+            0x89 => { self.adc(self.c); 4 },
+            0x8A => { self.adc(self.d); 4 },
+            0x8B => { self.adc(self.e); 4 },
+            0x8C => { self.adc(self.h); 4 },
+            0x8D => { self.adc(self.l); 4 },
             0x8E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.adc(temp);
+                8
             },
-            0x8F => self.adc(self.a),
-            0x90 => self.sub(self.b),
-            0x91 => self.sub(self.c),
-            0x92 => self.sub(self.d),
-            0x93 => self.sub(self.e),
-            0x94 => self.sub(self.h),
-            0x95 => self.sub(self.l),
+            0x8F => { self.adc(self.a); 4 },
+            0x90 => { self.sub(self.b); 4 },
+            0x91 => { self.sub(self.c); 4 },
+            0x92 => { self.sub(self.d); 4 },
+            0x93 => { self.sub(self.e); 4 },
+            0x94 => { self.sub(self.h); 4 },
+            0x95 => { self.sub(self.l); 4 },
             0x96 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.sub(temp);
+                8
             },
-            0x97 => self.sub(self.a),
-            0x98 => self.sbc(self.b),
-            0x99 => self.sbc(self.c),
-            0x9A => self.sbc(self.d),
-            0x9B => self.sbc(self.e),
-            0x9C => self.sbc(self.h),
-            0x9D => self.sbc(self.l),
+            0x97 => { self.sub(self.a); 4 },
+            0x98 => { self.sbc(self.b); 4 },
+            0x99 => { self.sbc(self.c); 4 },
+            0x9A => { self.sbc(self.d); 4 },
+            0x9B => { self.sbc(self.e); 4 },
+            0x9C => { self.sbc(self.h); 4 },
+            0x9D => { self.sbc(self.l); 4 },
             0x9E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.sbc(temp);
+                8
             },
-            0x9F => self.sbc(self.a),
-            0xA0 => self.and(self.b),
-            0xA1 => self.and(self.c),
-            0xA2 => self.and(self.d),
-            0xA3 => self.and(self.e),
-            0xA4 => self.and(self.h),
-            0xA5 => self.and(self.l),
+            0x9F => { self.sbc(self.a); 4 },
+            0xA0 => { self.and(self.b); 4 },
+            0xA1 => { self.and(self.c); 4 },
+            0xA2 => { self.and(self.d); 4 },
+            0xA3 => { self.and(self.e); 4 },
+            0xA4 => { self.and(self.h); 4 },
+            0xA5 => { self.and(self.l); 4 },
             0xA6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.and(temp);
+                8
             },
-            0xA7 => self.and(self.a),
-            0xA8 => self.xor(self.b),
-            0xA9 => self.xor(self.c),
-            0xAA => self.xor(self.d),
-            0xAB => self.xor(self.e),
-            0xAC => self.xor(self.h),
-            0xAD => self.xor(self.l),
+            0xA7 => { self.and(self.a); 4 },
+            0xA8 => { self.xor(self.b); 4 },
+            0xA9 => { self.xor(self.c); 4 },
+            0xAA => { self.xor(self.d); 4 },
+            0xAB => { self.xor(self.e); 4 },
+            0xAC => { self.xor(self.h); 4 },
+            0xAD => { self.xor(self.l); 4 },
             0xAE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.xor(temp);
+                8
             },
-            0xAF => self.xor(self.a),
-            0xB0 => self.or(self.b),
-            0xB1 => self.or(self.c),
-            0xB2 => self.or(self.d),
-            0xB3 => self.or(self.e),
-            0xB4 => self.or(self.h),
-            0xB5 => self.or(self.l),
+            0xAF => { self.xor(self.a); 4 },
+            0xB0 => { self.or(self.b); 4 },
+            0xB1 => { self.or(self.c); 4 },
+            0xB2 => { self.or(self.d); 4 },
+            0xB3 => { self.or(self.e); 4 },
+            0xB4 => { self.or(self.h); 4 },
+            0xB5 => { self.or(self.l); 4 },
             0xB6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.or(temp);
+                8
             },
-            0xB7 => self.or(self.a),
-            0xB8 => self.cp(self.b),
-            0xB9 => self.cp(self.c),
-            0xBA => self.cp(self.d),
-            0xBB => self.cp(self.e),
-            0xBC => self.cp(self.h),
-            0xBD => self.cp(self.l),
+            0xB7 => { self.or(self.a); 4 },
+            0xB8 => { self.cp(self.b); 4 },
+            0xB9 => { self.cp(self.c); 4 },
+            0xBA => { self.cp(self.d); 4 },
+            0xBB => { self.cp(self.e); 4 },
+            0xBC => { self.cp(self.h); 4 },
+            0xBD => { self.cp(self.l); 4 },
             0xBE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.cp(temp);
+                8
             },
-            0xBF => self.cp(self.a),
+            0xBF => { self.cp(self.a); 4 },
 
-            0xC6 => self.add_a(arg_u8),
-            0xCE => self.adc(arg_u8),
-            0xD6 => self.sub(arg_u8),
-            0xDE => self.sbc(arg_u8),
-            0xE6 => self.and(arg_u8),
-            0xEE => self.xor(arg_u8),
-            0xF6 => self.or(arg_u8),
-            0xFE => self.cp(arg_u8),
+            0xC6 => { self.add_a(arg_u8); 8 },
+            0xCE => { self.adc(arg_u8); 8 },
+            0xD6 => { self.sub(arg_u8); 8 },
+            0xDE => { self.sbc(arg_u8); 8 },
+            0xE6 => { self.and(arg_u8); 8 },
+            0xEE => { self.xor(arg_u8); 8 },
+            0xF6 => { self.or(arg_u8); 8 },
+            0xFE => { self.cp(arg_u8); 8 },
 
             // 16-bit arithmetic/logic instructions
-            0x03 => self.set_bc(self.get_bc().wrapping_add(1)),
-            0x09 => self.add_hl(self.get_bc()),
-            0x0B => self.set_bc(self.get_bc().wrapping_sub(1)),
-            0x13 => self.set_de(self.get_de().wrapping_add(1)),
-            0x19 => self.add_hl(self.get_de()),
-            0x1B => self.set_de(self.get_de().wrapping_sub(1)),
-            0x23 => self.set_hl(self.get_hl().wrapping_add(1)),
-            0x29 => self.add_hl(self.get_hl()),
-            0x2B => self.set_hl(self.get_hl().wrapping_sub(1)),
-            0x33 => self.sp = self.sp.wrapping_add(1),
-            0x39 => self.add_hl(self.sp),
-            0x3B => self.sp = self.sp.wrapping_sub(1),
-            0xE8 => self.add_signed(arg_u8 as i8),
+            0x03 => { self.set_bc(self.get_bc().wrapping_add(1)); 8 },
+            0x09 => { self.add_hl(self.get_bc()); 8 },
+            0x0B => { self.set_bc(self.get_bc().wrapping_sub(1)); 8 },
+            0x13 => { self.set_de(self.get_de().wrapping_add(1)); 8 },
+            0x19 => { self.add_hl(self.get_de()); 8 },
+            0x1B => { self.set_de(self.get_de().wrapping_sub(1)); 8 },
+            0x23 => { self.set_hl(self.get_hl().wrapping_add(1)); 8 },
+            0x29 => { self.add_hl(self.get_hl()); 8 },
+            0x2B => { self.set_hl(self.get_hl().wrapping_sub(1)); 8 },
+            0x33 => { self.sp = self.sp.wrapping_add(1); 8 },
+            0x39 => { self.add_hl(self.sp); 8 },
+            0x3B => { self.sp = self.sp.wrapping_sub(1); 8 },
+            0xE8 => { self.add_signed(arg_u8 as i8); 16 },
 
             // 8-bit shift, rotate, and bit instructions
-            0x07 => self.rlca(),
-            0x0F => self.rrca(),
-            0x17 => self.rla(),
-            0x1F => self.rra(),
-            0xCB => self.execute_cb(arg_u8),
+            0x07 => { self.rlca(); 4 },
+            0x0F => { self.rrca(); 4 },
+            0x17 => { self.rla(); 4 },
+            0x1F => { self.rra(); 4 },
+            0xCB => { self.execute_cb(arg_u8); 4 },
 
             // CPU control instructions
-            0x00 => (),
-            0x10 => self.stopped = true, 
-            0x27 => self.daa(),
-            0x2F => self.cpl(),
+            0x00 => { 4 },
+            0x10 => { self.stopped = true; 4 },
+            0x27 => { self.daa(); 4 },
+            0x2F => { self.cpl(); 4 },
             0x37 => {
                 self.set_flag(FlagRegister::Sub, false);
                 self.set_flag(FlagRegister::HalfCarry, false);
                 self.set_flag(FlagRegister::Carry, true);
+                4
             },
             0x3F => {
                 let carry = self.get_flag(FlagRegister::Carry) == 1;
                 self.set_flag(FlagRegister::Sub, false);
                 self.set_flag(FlagRegister::HalfCarry, false);
                 self.set_flag(FlagRegister::Carry, !carry);
+                4
             },
-            0x76 => self.halted = true,
-            0xF3 => self.ime = false,
-            0xFB => self.ime = true,
+            0x76 => { self.halted = true; 4 },
+            0xF3 => { self.ime = false; 4 },
+            0xFB => { self.ime = true; 4 },
 
-            0x18 => self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16),
+            0x18 => { self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16); 12 },
             0x20 => {
                 if self.get_flag(FlagRegister::Zero) == 0 { 
                     self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
-                } 
+                    12
+                } else {
+                    8
+                }
             },
             0x28 => {
                 if self.get_flag(FlagRegister::Zero) == 1 { 
                     self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
-                } 
+                    12
+                } else {
+                    8
+                }
             },
             0x30 => {
                 if self.get_flag(FlagRegister::Carry) == 0 { 
                     self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
-                } 
+                    12
+                } else {
+                    8 
+                }
             },
             0x38 => {
                 if self.get_flag(FlagRegister::Carry) == 1 { 
                     self.pc = self.pc.wrapping_add((arg_u8 as i8) as u16);
-                } 
+                    12
+                } else {
+                    8
+                }
             },
             0xC0 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
                     self.pc = self.pop();
+                    20
+                } else {
+                    8
                 }
             },
             0xC2 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
                     self.pc = arg_u16;
+                    16
+                } else {
+                    12
                 }
             },
-            0xC3 => self.pc = arg_u16,
+            0xC3 => { self.pc = arg_u16; 16 },
             0xC4 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
                     self.push(self.pc);
                     self.pc = arg_u16;
+                    24
+                } else {
+                    12
                 }
             },
             0xC7 => {
                 self.push(self.pc);
                 self.pc = 0x00;
+                16
             },
             0xC8 => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
                     self.pc = self.pop();
+                    20
+                } else {
+                    8
                 }
             },
-            0xC9 => self.pc = self.pop(),
+            0xC9 => { self.pc = self.pop(); 16 }
             0xCA => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
                     self.pc = arg_u16;
+                    16
+                } else {
+                    12
                 }
             },
             0xCC => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
                     self.push(self.pc);
                     self.pc = arg_u16;
+                    24
+                } else {
+                    12
                 }
             },
             0xCD => {
                 self.push(self.pc);
                 self.pc = arg_u16;
+                24
             },
             0xCF => {
                 self.push(self.pc);
                 self.pc = 0x08;
+                16
             },
             0xD0 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
                     self.pc = self.pop();
+                    12
+                } else {
+                    8
                 }
             },
             0xD2 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
                     self.pc = arg_u16;
+                    16
+                } else {  
+                    12
                 }
             },
             0xD4 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
                     self.push(self.pc);
                     self.pc = arg_u16;
+                    24
+                } else {
+                    12
                 }
             },
             0xD7 => {
                 self.push(self.pc);
                 self.pc = 0x10;
+                16
             },
             0xD8 => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
                     self.pc = self.pop();
+                    20
+                } else {
+                    8
                 }
             },
             0xD9 => {
                 self.pc = self.pop();
                 self.ime = true;
+                16
             },
 
             0xDA => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
                     self.pc = arg_u16;
+                    16
+                } else {
+                    12
                 }
             },
             0xDC => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
                     self.push(self.pc);
                     self.pc = arg_u16;
+                    24
+                } else {
+                    12
                 }
             },
             0xDF => {
                 self.push(self.pc);
                 self.pc = 0x18;
+                16
             },
             0xE7 => {
                 self.push(self.pc);
                 self.pc = 0x20;
+                16
             },
-            0xE9 => self.pc = self.get_hl(),
+            0xE9 => { self.pc = self.get_hl(); 4 },
             0xEF => {
                 self.push(self.pc);
                 self.pc = 0x28;
+                16
             },
             0xF7 => {
                 self.push(self.pc);
                 self.pc = 0x30;
+                16
             },
             0xFF => {
                 self.push(self.pc);
                 self.pc = 0x38;
+                16
             },
             _ => unreachable!()
             // _ => println!("Error: Opcode unknown: {:X}; something has gone seriously wrong", opcode),
