@@ -71,8 +71,8 @@ pub struct CPU {
     pub stopped: bool,
     pub halted: bool,
 
-    pub div_timer: u32,
-    pub tima_timer: u32,
+    pub div_cycles: u32,
+    pub tima_cycles: u32,
     pub mmu: Rc<RefCell<MMU>>
 }
 
@@ -95,8 +95,8 @@ impl CPU {
             stopped: false,
             halted: false,
 
-            div_timer: 0,
-            tima_timer: 0,
+            div_cycles: 0,
+            tima_cycles: 0,
             mmu: mmu
         }
     }
@@ -118,61 +118,67 @@ impl CPU {
     register_access!(get_de, set_de, d, e); 
     register_access!(get_hl, set_hl, h, l);
 
-    pub fn update_timers(&mut self, instruction_cycles: u32) {
+    pub fn update_tima(&mut self, instruction_cycles: u32) {
+        // First Timer: TIMA: incremented at frequency specified by TAC register 
+        // TAC: TIMA increment rate and timer enabled
+        // tima_cycles tracks number of cycles to handle incrementing TIMA
 
-        // First Timer: DIV: incremented at 16384Hz
-        // GB CPU Clock: 4.194304 MHz
-        // 4.194304 MHz / 16384 Hz = 256 clocks per DIV increment
-
-        let mut div = self.mmu.borrow().read_byte(TimerSource::DividerRegister as u16);
-        self.div_timer = self.div_timer.wrapping_add(instruction_cycles);
-        if self.div_timer >= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED {
-            div = div.wrapping_add(1);
-            self.div_timer -= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED;
-        }
-        self.mmu.borrow_mut().write_byte(TimerSource::DividerRegister as u16, div);
-
-        // Second Timer: TIMA: incremented at frequency specified by TAC register 
-        // TAC: clock select bits (increments TIMA at different rates)
-        
-        let tac = self.mmu.borrow().read_byte(TimerSource::TimerControl as u16);
         let tima = self.mmu.borrow().read_byte(TimerSource::TimerCounter as u16);
         let tma = self.mmu.borrow().read_byte(TimerSource::TimerModulo as u16);
+
+        let tac = self.mmu.borrow().read_byte(TimerSource::TimerControl as u16);
         let clock_select = tac & 0b00000011;
-
         let clock_freq = match clock_select {
-            0b00 => 1024,
-            0b01 => 16,
-            0b10 => 64,
-            0b11 => 256,
-            _ => 1024
+            0b00 => 4096,
+            0b01 => 262144,
+            0b10 => 65536,
+            0b11 => 16384,
+            _ => 4096
         };
-
         let timer_enabled = (tac & 0b100) != 0;
 
         if timer_enabled {
-            self.tima_timer = self.tima_timer.wrapping_add(instruction_cycles);
-            
-            if self.tima_timer >= CPU_CLOCK_SPEED / clock_freq {
-                self.tima_timer -= CPU_CLOCK_SPEED / clock_freq;
+            let increment_rate = CPU_CLOCK_SPEED / clock_freq;
+            self.tima_cycles += instruction_cycles;
+
+            if self.tima_cycles >= increment_rate {
+                self.tima_cycles -= increment_rate;
                 
                 let new_tima = tima.wrapping_add(1);
                 
-                // Fire interrupt if TIMA overflows
+                // Request interrupt if TIMA overflows
                 if new_tima == 0 {
                     // Reset TIMA to TMA value
                     self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, tma);
-                    
                     let interrupt_flag = self.mmu.borrow().read_byte(InterruptSource::InterruptFlag as u16);
-                    self.mmu.borrow_mut().write_byte(
-                        InterruptSource::InterruptFlag as u16,
-                        interrupt_flag | (1 << InterruptBit::Timer as u8)
-                    );
+                    let new_interrupt_flag = interrupt_flag | (1 << InterruptBit::Timer as u8);
+                    self.mmu.borrow_mut().write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
                 } else {
                     self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, new_tima);
                 }
+            } else {
+                self.tima_cycles += instruction_cycles;
             }
         }
+
+    }
+
+    pub fn update_div(&mut self, instruction_cycles: u32) {
+        // Second Timer: DIV: incremented at 16384Hz
+        // 4.194304 MHz / 16384 Hz = 256 T cycles/64 M Cycles
+
+        let mut div = self.mmu.borrow().read_byte(TimerSource::DividerRegister as u16);
+        self.div_cycles = self.div_cycles.wrapping_add(instruction_cycles);
+        if self.div_cycles >= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED {
+            div = div.wrapping_add(1);
+            self.div_cycles -= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED;
+        }
+        self.mmu.borrow_mut().write_byte(TimerSource::DividerRegister as u16, div);
+    }
+
+    pub fn update_timers(&mut self, instruction_cycles: u32) {
+        self.update_tima(instruction_cycles);
+        self.update_div(instruction_cycles);
     }
 
     pub fn check_interrupts(&mut self) {
@@ -1057,389 +1063,400 @@ impl CPU {
         }
     }
 
-    pub fn execute_cb(&mut self, opcode: u8) {
+    pub fn execute_cb(&mut self, opcode: u8) -> u8 {
         match opcode {
-            0x00 => self.b = self.rlc(self.b),
-            0x01 => self.c = self.rlc(self.c),
-            0x02 => self.d = self.rlc(self.d),
-            0x03 => self.e = self.rlc(self.e),
-            0x04 => self.h = self.rlc(self.h),
-            0x05 => self.l = self.rlc(self.l),
+            0x00 => { self.b = self.rlc(self.b); 8 },
+            0x01 => { self.c = self.rlc(self.c); 8 },
+            0x02 => { self.d = self.rlc(self.d); 8 },
+            0x03 => { self.e = self.rlc(self.e); 8 },
+            0x04 => { self.h = self.rlc(self.h); 8 },
+            0x05 => { self.l = self.rlc(self.l); 8 },
             0x06 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rlc(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x07 => self.a = self.rlc(self.a),
-            0x08 => self.b = self.rrc(self.b),
-            0x09 => self.c = self.rrc(self.c),
-            0x0A => self.d = self.rrc(self.d),
-            0x0B => self.e = self.rrc(self.e),
-            0x0C => self.h = self.rrc(self.h),
-            0x0D => self.l = self.rrc(self.l),
+            0x07 => { self.a = self.rlc(self.a); 8 },
+            0x08 => { self.b = self.rrc(self.b); 8 },
+            0x09 => { self.c = self.rrc(self.c); 8 },
+            0x0A => { self.d = self.rrc(self.d); 8 },
+            0x0B => { self.e = self.rrc(self.e); 8 },
+            0x0C => { self.h = self.rrc(self.h); 8 },
+            0x0D => { self.l = self.rrc(self.l); 8 },
             0x0E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rrc(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x0F => self.a = self.rrc(self.a),
-
-            0x10 => self.b = self.rl(self.b),
-            0x11 => self.c = self.rl(self.c),
-            0x12 => self.d = self.rl(self.d),
-            0x13 => self.e = self.rl(self.e),
-            0x14 => self.h = self.rl(self.h),
-            0x15 => self.l = self.rl(self.l),
+            0x0F => { self.a = self.rrc(self.a); 8 },
+            0x10 => { self.b = self.rl(self.b); 8 },
+            0x11 => { self.c = self.rl(self.c); 8 },
+            0x12 => { self.d = self.rl(self.d); 8 },
+            0x13 => { self.e = self.rl(self.e); 8 },
+            0x14 => { self.h = self.rl(self.h); 8 },
+            0x15 => { self.l = self.rl(self.l); 8 },
             0x16 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rl(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x17 => self.a = self.rl(self.a),
-            0x18 => self.b = self.rr(self.b),
-            0x19 => self.c = self.rr(self.c),
-            0x1A => self.d = self.rr(self.d),
-            0x1B => self.e = self.rr(self.e),
-            0x1C => self.h = self.rr(self.h),
-            0x1D => self.l = self.rr(self.l),
+            0x17 => { self.a = self.rl(self.a); 8 },
+            0x18 => { self.b = self.rr(self.b); 8 },
+            0x19 => { self.c = self.rr(self.c); 8 },
+            0x1A => { self.d = self.rr(self.d); 8 },
+            0x1B => { self.e = self.rr(self.e); 8 },
+            0x1C => { self.h = self.rr(self.h); 8 },
+            0x1D => { self.l = self.rr(self.l); 8 },
             0x1E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.rr(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x1F => self.a = self.rr(self.a),
-
-            0x20 => self.b = self.sla(self.b),
-            0x21 => self.c = self.sla(self.c),
-            0x22 => self.d = self.sla(self.d),
-            0x23 => self.e = self.sla(self.e),
-            0x24 => self.h = self.sla(self.h),
-            0x25 => self.l = self.sla(self.l),
+            0x1F => { self.a = self.rr(self.a); 8 },
+            0x20 => { self.b = self.sla(self.b); 8 },
+            0x21 => { self.c = self.sla(self.c); 8 },
+            0x22 => { self.d = self.sla(self.d); 8 },
+            0x23 => { self.e = self.sla(self.e); 8 },
+            0x24 => { self.h = self.sla(self.h); 8 },
+            0x25 => { self.l = self.sla(self.l); 8 },
             0x26 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.sla(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x27 => self.a = self.sla(self.a),
-            0x28 => self.b = self.sra(self.b),
-            0x29 => self.c = self.sra(self.c),
-            0x2A => self.d = self.sra(self.d),
-            0x2B => self.e = self.sra(self.e),
-            0x2C => self.h = self.sra(self.h),
-            0x2D => self.l = self.sra(self.l),
+            0x27 => { self.a = self.sla(self.a); 8 },
+            0x28 => { self.b = self.sra(self.b); 8 },
+            0x29 => { self.c = self.sra(self.c); 8 },
+            0x2A => { self.d = self.sra(self.d); 8 },
+            0x2B => { self.e = self.sra(self.e); 8 },
+            0x2C => { self.h = self.sra(self.h); 8 },
+            0x2D => { self.l = self.sra(self.l); 8 },
             0x2E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.sra(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x2F => self.a = self.sra(self.a),
-
-            0x30 => self.b = self.swap(self.b),
-            0x31 => self.c = self.swap(self.c),
-            0x32 => self.d = self.swap(self.d),
-            0x33 => self.e = self.swap(self.e),
-            0x34 => self.h = self.swap(self.h),
-            0x35 => self.l = self.swap(self.l),
+            0x2F => { self.a = self.sra(self.a); 8 },
+            0x30 => { self.b = self.swap(self.b); 8 },
+            0x31 => { self.c = self.swap(self.c); 8 },
+            0x32 => { self.d = self.swap(self.d); 8 },
+            0x33 => { self.e = self.swap(self.e); 8 },
+            0x34 => { self.h = self.swap(self.h); 8 },
+            0x35 => { self.l = self.swap(self.l); 8 },
             0x36 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.swap(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x37 => self.a = self.swap(self.a),
-            0x38 => self.b = self.srl(self.b),  
-            0x39 => self.c = self.srl(self.c),
-            0x3A => self.d = self.srl(self.d),
-            0x3B => self.e = self.srl(self.e),
-            0x3C => self.h = self.srl(self.h),
-            0x3D => self.l = self.srl(self.l),
+            0x37 => { self.a = self.swap(self.a); 8 },
+            0x38 => { self.b = self.srl(self.b); 8 },
+            0x39 => { self.c = self.srl(self.c); 8 },
+            0x3A => { self.d = self.srl(self.d); 8 },
+            0x3B => { self.e = self.srl(self.e); 8 },
+            0x3C => { self.h = self.srl(self.h); 8 },
+            0x3D => { self.l = self.srl(self.l); 8 },
             0x3E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 let result = self.srl(temp);
                 self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                16
             },
-            0x3F => self.a = self.srl(self.a),
-
-            0x40 => self.bit(0, self.b),
-            0x41 => self.bit(0, self.c),
-            0x42 => self.bit(0, self.d),
-            0x43 => self.bit(0, self.e),
-            0x44 => self.bit(0, self.h),
-            0x45 => self.bit(0, self.l),
+            0x3F => { self.a = self.srl(self.a); 8 },
+            0x40 => { self.bit(0, self.b); 8 },
+            0x41 => { self.bit(0, self.c); 8 },
+            0x42 => { self.bit(0, self.d); 8 },
+            0x43 => { self.bit(0, self.e); 8 },
+            0x44 => { self.bit(0, self.h); 8 },
+            0x45 => { self.bit(0, self.l); 8 },
             0x46 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(0, temp);
+                12
             },
-            0x47 => self.bit(0, self.a),
-            0x48 => self.bit(1, self.b),
-            0x49 => self.bit(1, self.c),
-            0x4A => self.bit(1, self.d),
-            0x4B => self.bit(1, self.e),
-            0x4C => self.bit(1, self.h),
-            0x4D => self.bit(1, self.l),
+            0x47 => { self.bit(0, self.a); 8 },
+            0x48 => { self.bit(1, self.b); 8 },
+            0x49 => { self.bit(1, self.c); 8 },
+            0x4A => { self.bit(1, self.d); 8 },
+            0x4B => { self.bit(1, self.e); 8 },
+            0x4C => { self.bit(1, self.h); 8 },
+            0x4D => { self.bit(1, self.l); 8 },
             0x4E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(1, temp);
+                12
             },
-            0x4F => self.bit(1, self.a),
-
-            0x50 => self.bit(2, self.b),
-            0x51 => self.bit(2, self.c),
-            0x52 => self.bit(2, self.d),
-            0x53 => self.bit(2, self.e),
-            0x54 => self.bit(2, self.h),
-            0x55 => self.bit(2, self.l),
+            0x4F => { self.bit(1, self.a); 8 },
+            0x50 => { self.bit(2, self.b); 8 },
+            0x51 => { self.bit(2, self.c); 8 },
+            0x52 => { self.bit(2, self.d); 8 },
+            0x53 => { self.bit(2, self.e); 8 },
+            0x54 => { self.bit(2, self.h); 8 },
+            0x55 => { self.bit(2, self.l); 8 },
             0x56 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(2, temp);
+                12
             },
-            0x57 => self.bit(2, self.a),
-            0x58 => self.bit(3, self.b),
-            0x59 => self.bit(3, self.c),
-            0x5A => self.bit(3, self.d),
-            0x5B => self.bit(3, self.e),
-            0x5C => self.bit(3, self.h),
-            0x5D => self.bit(3, self.l),
+            0x57 => { self.bit(2, self.a); 8 },
+            0x58 => { self.bit(3, self.b); 8 },
+            0x59 => { self.bit(3, self.c); 8 },
+            0x5A => { self.bit(3, self.d); 8 },
+            0x5B => { self.bit(3, self.e); 8 },
+            0x5C => { self.bit(3, self.h); 8 },
+            0x5D => { self.bit(3, self.l); 8 },
             0x5E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(3, temp);
+                12
             },
-            0x5F => self.bit(3, self.a),
-
-            0x60 => self.bit(4, self.b),
-            0x61 => self.bit(4, self.c),
-            0x62 => self.bit(4, self.d),
-            0x63 => self.bit(4, self.e),
-            0x64 => self.bit(4, self.h),
-            0x65 => self.bit(4, self.l),
+            0x5F => { self.bit(3, self.a); 8 },
+            0x60 => { self.bit(4, self.b); 8 },
+            0x61 => { self.bit(4, self.c); 8 },
+            0x62 => { self.bit(4, self.d); 8 },
+            0x63 => { self.bit(4, self.e); 8 },
+            0x64 => { self.bit(4, self.h); 8 },
+            0x65 => { self.bit(4, self.l); 8 },
             0x66 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(4, temp);
+                12
             },
-            0x67 => self.bit(4, self.a),
-            0x68 => self.bit(5, self.b),
-            0x69 => self.bit(5, self.c),
-            0x6A => self.bit(5, self.d),
-            0x6B => self.bit(5, self.e),
-            0x6C => self.bit(5, self.h),
-            0x6D => self.bit(5, self.l),
+            0x67 => { self.bit(4, self.a); 8 },
+            0x68 => { self.bit(5, self.b); 8 },
+            0x69 => { self.bit(5, self.c); 8 },
+            0x6A => { self.bit(5, self.d); 8 },
+            0x6B => { self.bit(5, self.e); 8 },
+            0x6C => { self.bit(5, self.h); 8 },
+            0x6D => { self.bit(5, self.l); 8 },
             0x6E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(5, temp);
+                12
             },
-            0x6F => self.bit(5, self.a),
-
-            0x70 => self.bit(6, self.b),
-            0x71 => self.bit(6, self.c),
-            0x72 => self.bit(6, self.d),
-            0x73 => self.bit(6, self.e),
-            0x74 => self.bit(6, self.h),
-            0x75 => self.bit(6, self.l),
+            0x6F => { self.bit(5, self.a); 8 },
+            0x70 => { self.bit(6, self.b); 8 },
+            0x71 => { self.bit(6, self.c); 8 },
+            0x72 => { self.bit(6, self.d); 8 },
+            0x73 => { self.bit(6, self.e); 8 },
+            0x74 => { self.bit(6, self.h); 8 },
+            0x75 => { self.bit(6, self.l); 8 },
             0x76 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(6, temp);
+                12
             },
-            0x77 => self.bit(6, self.a),
-            0x78 => self.bit(7, self.b),
-            0x79 => self.bit(7, self.c),
-            0x7A => self.bit(7, self.d),
-            0x7B => self.bit(7, self.e),
-            0x7C => self.bit(7, self.h),
-            0x7D => self.bit(7, self.l),
+            0x77 => { self.bit(6, self.a); 8 },
+            0x78 => { self.bit(7, self.b); 8 },
+            0x79 => { self.bit(7, self.c); 8 },
+            0x7A => { self.bit(7, self.d); 8 },
+            0x7B => { self.bit(7, self.e); 8 },
+            0x7C => { self.bit(7, self.h); 8 },
+            0x7D => { self.bit(7, self.l); 8 },
             0x7E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.bit(7, temp);
+                12
             },
-            0x7F => self.bit(7, self.a),
-
-            0x80 => self.b = self.res(0, self.b),
-            0x81 => self.c = self.res(0, self.c),
-            0x82 => self.d = self.res(0, self.d),
-            0x83 => self.e = self.res(0, self.e),
-            0x84 => self.h = self.res(0, self.h),
-            0x85 => self.l = self.res(0, self.l),
+            0x7F => { self.bit(7, self.a); 8 },
+            0x80 => { self.b = self.res(0, self.b); 8 },
+            0x81 => { self.c = self.res(0, self.c); 8 },
+            0x82 => { self.d = self.res(0, self.d); 8 },
+            0x83 => { self.e = self.res(0, self.e); 8 },
+            0x84 => { self.h = self.res(0, self.h); 8 },
+            0x85 => { self.l = self.res(0, self.l); 8 },
             0x86 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(0, temp));
+                16
             },
-            0x87 => self.a = self.res(0, self.a),
-            0x88 => self.b = self.res(1, self.b),
-            0x89 => self.c = self.res(1, self.c),
-            0x8A => self.d = self.res(1, self.d),
-            0x8B => self.e = self.res(1, self.e),
-            0x8C => self.h = self.res(1, self.h),
-            0x8D => self.l = self.res(1, self.l),
+            0x87 => { self.a = self.res(0, self.a); 8 },
+            0x88 => { self.b = self.res(1, self.b); 8 },
+            0x89 => { self.c = self.res(1, self.c); 8 },
+            0x8A => { self.d = self.res(1, self.d); 8 },
+            0x8B => { self.e = self.res(1, self.e); 8 },
+            0x8C => { self.h = self.res(1, self.h); 8 },
+            0x8D => { self.l = self.res(1, self.l); 8 },
             0x8E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(1, temp));
+                16
             },
-            0x8F => self.a = self.res(1, self.a),
-
-            0x90 => self.b = self.res(2, self.b),
-            0x91 => self.c = self.res(2, self.c),
-            0x92 => self.d = self.res(2, self.d),
-            0x93 => self.e = self.res(2, self.e),
-            0x94 => self.h = self.res(2, self.h),
-            0x95 => self.l = self.res(2, self.l),
+            0x8F => { self.a = self.res(1, self.a); 8 },
+            0x90 => { self.b = self.res(2, self.b); 8 },
+            0x91 => { self.c = self.res(2, self.c); 8 },
+            0x92 => { self.d = self.res(2, self.d); 8 },
+            0x93 => { self.e = self.res(2, self.e); 8 },
+            0x94 => { self.h = self.res(2, self.h); 8 },
+            0x95 => { self.l = self.res(2, self.l); 8 },
             0x96 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(2, temp));
+                16
             },
-            0x97 => self.a = self.res(2, self.a),
-
-            0x98 => self.b = self.res(3, self.b),
-            0x99 => self.c = self.res(3, self.c),
-            0x9A => self.d = self.res(3, self.d),
-            0x9B => self.e = self.res(3, self.e),
-            0x9C => self.h = self.res(3, self.h),
-            0x9D => self.l = self.res(3, self.l),
+            0x97 => { self.a = self.res(2, self.a); 8 },
+            0x98 => { self.b = self.res(3, self.b); 8 },
+            0x99 => { self.c = self.res(3, self.c); 8 },
+            0x9A => { self.d = self.res(3, self.d); 8 },
+            0x9B => { self.e = self.res(3, self.e); 8 },
+            0x9C => { self.h = self.res(3, self.h); 8 },
+            0x9D => { self.l = self.res(3, self.l); 8 },
             0x9E => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(3, temp));
+                16
             },
-            0x9F => self.a = self.res(3, self.a),
-
-            0xA0 => self.b = self.res(4, self.b),
-            0xA1 => self.c = self.res(4, self.c),
-            0xA2 => self.d = self.res(4, self.d),
-            0xA3 => self.e = self.res(4, self.e),
-            0xA4 => self.h = self.res(4, self.h),
-            0xA5 => self.l = self.res(4, self.l),
+            0x9F => { self.a = self.res(3, self.a); 8 },
+            0xA0 => { self.b = self.res(4, self.b); 8 },
+            0xA1 => { self.c = self.res(4, self.c); 8 },
+            0xA2 => { self.d = self.res(4, self.d); 8 },
+            0xA3 => { self.e = self.res(4, self.e); 8 },
+            0xA4 => { self.h = self.res(4, self.h); 8 },
+            0xA5 => { self.l = self.res(4, self.l); 8 },
             0xA6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(4, temp));
+                16
             },
-            0xA7 => self.a = self.res(4, self.a),
-            0xA8 => self.b = self.res(5, self.b),
-            0xA9 => self.c = self.res(5, self.c),
-            0xAA => self.d = self.res(5, self.d),
-            0xAB => self.e = self.res(5, self.e),
-            0xAC => self.h = self.res(5, self.h),
-            0xAD => self.l = self.res(5, self.l),
+            0xA7 => { self.a = self.res(4, self.a); 8 },
+            0xA8 => { self.b = self.res(5, self.b); 8 },
+            0xA9 => { self.c = self.res(5, self.c); 8 },
+            0xAA => { self.d = self.res(5, self.d); 8 },
+            0xAB => { self.e = self.res(5, self.e); 8 },
+            0xAC => { self.h = self.res(5, self.h); 8 },
+            0xAD => { self.l = self.res(5, self.l); 8 },
             0xAE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(5, temp));
+                16
             },
-            0xAF => self.a = self.res(5, self.a),
-
-            0xB0 => self.b = self.res(6, self.b),
-            0xB1 => self.c = self.res(6, self.c),
-            0xB2 => self.d = self.res(6, self.d),
-            0xB3 => self.e = self.res(6, self.e),
-            0xB4 => self.h = self.res(6, self.h),
-            0xB5 => self.l = self.res(6, self.l),
+            0xAF => { self.a = self.res(5, self.a); 8 },
+            0xB0 => { self.b = self.res(6, self.b); 8 },
+            0xB1 => { self.c = self.res(6, self.c); 8 },
+            0xB2 => { self.d = self.res(6, self.d); 8 },
+            0xB3 => { self.e = self.res(6, self.e); 8 },
+            0xB4 => { self.h = self.res(6, self.h); 8 },
+            0xB5 => { self.l = self.res(6, self.l); 8 },
             0xB6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(6, temp));
+                16
             },
-            0xB7 => self.a = self.res(6, self.a),
-
-            0xB8 => self.b = self.res(7, self.b),
-            0xB9 => self.c = self.res(7, self.c),
-            0xBA => self.d = self.res(7, self.d),
-            0xBB => self.e = self.res(7, self.e),
-            0xBC => self.h = self.res(7, self.h),
-            0xBD => self.l = self.res(7, self.l),
+            0xB7 => { self.a = self.res(6, self.a); 8 },
+            0xB8 => { self.b = self.res(7, self.b); 8 },
+            0xB9 => { self.c = self.res(7, self.c); 8 },
+            0xBA => { self.d = self.res(7, self.d); 8 },
+            0xBB => { self.e = self.res(7, self.e); 8 },
+            0xBC => { self.h = self.res(7, self.h); 8 },
+            0xBD => { self.l = self.res(7, self.l); 8 },
             0xBE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.res(7, temp));
+                16
             },
-            0xBF => self.a = self.res(7, self.a),
-
-            0xC0 => self.b = self.set(0, self.b),
-            0xC1 => self.c = self.set(0, self.c),
-            0xC2 => self.d = self.set(0, self.d),
-            0xC3 => self.e = self.set(0, self.e),
-            0xC4 => self.h = self.set(0, self.h),
-            0xC5 => self.l = self.set(0, self.l),
+            0xBF => { self.a = self.res(7, self.a); 8 },
+            0xC0 => { self.b = self.set(0, self.b); 8 },
+            0xC1 => { self.c = self.set(0, self.c); 8 },
+            0xC2 => { self.d = self.set(0, self.d); 8 },
+            0xC3 => { self.e = self.set(0, self.e); 8 },
+            0xC4 => { self.h = self.set(0, self.h); 8 },
+            0xC5 => { self.l = self.set(0, self.l); 8 },
             0xC6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(0, temp));
+                16
             },
-            0xC7 => self.a = self.set(0, self.a),
-
-            0xC8 => self.b = self.set(1, self.b),
-            0xC9 => self.c = self.set(1, self.c),
-            0xCA => self.d = self.set(1, self.d),
-            0xCB => self.e = self.set(1, self.e),
-            0xCC => self.h = self.set(1, self.h),
-            0xCD => self.l = self.set(1, self.l),
+            0xC7 => { self.a = self.set(0, self.a); 8 },
+            0xC8 => { self.b = self.set(1, self.b); 8 },
+            0xC9 => { self.c = self.set(1, self.c); 8 },
+            0xCA => { self.d = self.set(1, self.d); 8 },
+            0xCB => { self.e = self.set(1, self.e); 8 },
+            0xCC => { self.h = self.set(1, self.h); 8 },
+            0xCD => { self.l = self.set(1, self.l); 8 },
             0xCE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(1, temp));
+                16
             },
-            0xCF => self.a = self.set(1, self.a),
-
-            0xD0 => self.b = self.set(2, self.b),
-            0xD1 => self.c = self.set(2, self.c),
-            0xD2 => self.d = self.set(2, self.d),
-            0xD3 => self.e = self.set(2, self.e),
-            0xD4 => self.h = self.set(2, self.h),
-            0xD5 => self.l = self.set(2, self.l),
+            0xCF => { self.a = self.set(1, self.a); 8 },
+            0xD0 => { self.b = self.set(2, self.b); 8 },
+            0xD1 => { self.c = self.set(2, self.c); 8 },
+            0xD2 => { self.d = self.set(2, self.d); 8 },
+            0xD3 => { self.e = self.set(2, self.e); 8 },
+            0xD4 => { self.h = self.set(2, self.h); 8 },
+            0xD5 => { self.l = self.set(2, self.l); 8 },
             0xD6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(2, temp));
+                16
             },
-            0xD7 => self.a = self.set(2, self.a),
-
-            0xD8 => self.b = self.set(3, self.b),
-            0xD9 => self.c = self.set(3, self.c),
-            0xDA => self.d = self.set(3, self.d),
-            0xDB => self.e = self.set(3, self.e),
-            0xDC => self.h = self.set(3, self.h),
-            0xDD => self.l = self.set(3, self.l),
+            0xD7 => { self.a = self.set(2, self.a); 8 },
+            0xD8 => { self.b = self.set(3, self.b); 8 },
+            0xD9 => { self.c = self.set(3, self.c); 8 },
+            0xDA => { self.d = self.set(3, self.d); 8 },
+            0xDB => { self.e = self.set(3, self.e); 8 },
+            0xDC => { self.h = self.set(3, self.h); 8 },
+            0xDD => { self.l = self.set(3, self.l); 8 },
             0xDE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(3, temp));
+                16
             },
-            0xDF => self.a = self.set(3, self.a),
-
-            0xE0 => self.b = self.set(4, self.b),
-            0xE1 => self.c = self.set(4, self.c),
-            0xE2 => self.d = self.set(4, self.d),
-            0xE3 => self.e = self.set(4, self.e),
-            0xE4 => self.h = self.set(4, self.h),
-            0xE5 => self.l = self.set(4, self.l),
+            0xDF => { self.a = self.set(3, self.a); 8 },
+            0xE0 => { self.b = self.set(4, self.b); 8 },
+            0xE1 => { self.c = self.set(4, self.c); 8 },
+            0xE2 => { self.d = self.set(4, self.d); 8 },
+            0xE3 => { self.e = self.set(4, self.e); 8 },
+            0xE4 => { self.h = self.set(4, self.h); 8 },
+            0xE5 => { self.l = self.set(4, self.l); 8 },
             0xE6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(4, temp));
+                16
             },
-            0xE7 => self.a = self.set(4, self.a),
-
-            0xE8 => self.b = self.set(5, self.b),
-            0xE9 => self.c = self.set(5, self.c),
-            0xEA => self.d = self.set(5, self.d),
-            0xEB => self.e = self.set(5, self.e),
-            0xEC => self.h = self.set(5, self.h),
-            0xED => self.l = self.set(5, self.l),
+            0xE7 => { self.a = self.set(4, self.a); 8 },
+            0xE8 => { self.b = self.set(5, self.b); 8 },
+            0xE9 => { self.c = self.set(5, self.c); 8 },
+            0xEA => { self.d = self.set(5, self.d); 8 },
+            0xEB => { self.e = self.set(5, self.e); 8 },
+            0xEC => { self.h = self.set(5, self.h); 8 },
+            0xED => { self.l = self.set(5, self.l); 8 },
             0xEE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(5, temp));
+                16
             },
-            0xEF => self.a = self.set(5, self.a),
-
-            0xF0 => self.b = self.set(6, self.b),
-            0xF1 => self.c = self.set(6, self.c),
-            0xF2 => self.d = self.set(6, self.d),
-            0xF3 => self.e = self.set(6, self.e),
-            0xF4 => self.h = self.set(6, self.h),
-            0xF5 => self.l = self.set(6, self.l),
+            0xEF => { self.a = self.set(5, self.a); 8 },
+            0xF0 => { self.b = self.set(6, self.b); 8 },
+            0xF1 => { self.c = self.set(6, self.c); 8 },
+            0xF2 => { self.d = self.set(6, self.d); 8 },
+            0xF3 => { self.e = self.set(6, self.e); 8 },
+            0xF4 => { self.h = self.set(6, self.h); 8 },
+            0xF5 => { self.l = self.set(6, self.l); 8 },
             0xF6 => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(6, temp));
+                16
             },
-            0xF7 => self.a = self.set(6, self.a),
-
-            0xF8 => self.b = self.set(7, self.b),
-            0xF9 => self.c = self.set(7, self.c),
-            0xFA => self.d = self.set(7, self.d),
-            0xFB => self.e = self.set(7, self.e),
-            0xFC => self.h = self.set(7, self.h),
-            0xFD => self.l = self.set(7, self.l),
+            0xF7 => { self.a = self.set(6, self.a); 8 },
+            0xF8 => { self.b = self.set(7, self.b); 8 },
+            0xF9 => { self.c = self.set(7, self.c); 8 },
+            0xFA => { self.d = self.set(7, self.d); 8 },
+            0xFB => { self.e = self.set(7, self.e); 8 },
+            0xFC => { self.h = self.set(7, self.h); 8 },
+            0xFD => { self.l = self.set(7, self.l); 8 },
             0xFE => {
                 let temp = self.mmu.borrow().read_byte(self.get_hl());
                 self.mmu.borrow_mut().write_byte(self.get_hl(), self.set(7, temp));
+                16
             },
-            0xFF => self.a = self.set(7, self.a),
+            0xFF => { self.a = self.set(7, self.a); 8 }
         }
     }
 }
