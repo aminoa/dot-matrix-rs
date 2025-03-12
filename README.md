@@ -12,11 +12,11 @@ TODO:
 - [x] Pass Blarg's CPU test suite 
 - [x] Timing
 - [x] Clock
-- [] PPU
-- [] Input (Joypad) 
-- [] Memory banking
-- [] APU
-- [] Savestates
+- [ ] PPU
+- [ ] Input (Joypad) 
+- [ ] Memory banking
+- [ ] APU
+- [ ] Savestates
 
 Credits:
 
