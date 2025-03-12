@@ -4,18 +4,18 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 ## Implementation Differences from dot-matrix (C++)
 
+- Timing (both the clock and timers) properly emulated
+
 TODO:
 
 - [x] Generate macro for register getter/setters
-- [] Pass Blarg's CPU test suite 
-    - [] Only missing cpu test 2
-- [] Timing
-- [] Clock
+- [x] Pass Blarg's CPU test suite 
+- [x] Timing
+- [x] Clock
 - [] PPU
 - [] Input (Joypad) 
 - [] Memory banking
 - [] APU
-- [] Integration tests (at least for the CPU)
 - [] Savestates
 
 Credits:

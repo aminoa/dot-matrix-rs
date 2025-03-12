@@ -1,7 +1,6 @@
 use std::fs;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::thread::current;
 use crate::cpu::CPU;
 use crate::mmu::MMU;
 use crate::consts::{CB_OPCODES, CYCLES_PER_FRAME, OPCODES};
