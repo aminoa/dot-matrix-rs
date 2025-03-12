@@ -191,6 +191,7 @@ impl CPU {
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Timer);
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Serial);
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Joypad);
+            self.halted = false;
         }
     }
 
@@ -536,6 +537,17 @@ impl CPU {
     }
 
     pub fn execute(&mut self, opcode: u8) -> u8 {
+        if self.halted {
+            let interrupt_flag = self.mmu.borrow().read_byte(0xFF0F);
+            let interrupt_enable = self.mmu.borrow().read_byte(0xFFFF);
+
+            if interrupt_flag & interrupt_enable != 0 {
+                self.halted = false;
+            };
+            return 4
+        } 
+
+
         let arg_u8: u8 = self.mmu.borrow().read_byte(self.pc + 1);
         let arg_u16: u16 = self.mmu.borrow().read_short(self.pc + 1);
 
