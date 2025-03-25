@@ -1,7 +1,9 @@
 mod gb;
 mod cpu;
 mod mmu;
+mod ppu;
 mod consts;
+mod renderer;
 
 use gb::GB;
 use clap::Parser;
