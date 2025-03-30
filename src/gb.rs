@@ -36,6 +36,7 @@ impl GB {
             let mut current_cycles: u32 = 0;
             while current_cycles < CYCLES_PER_FRAME {
                 let instruction = self.mmu.borrow().read_byte(self.cpu.pc.clone());
+
                 let instruction_cycles = self.cpu.execute(instruction);
                 self.cpu.check_interrupts();
                 self.cpu.update_timers(instruction_cycles as u32);
@@ -49,6 +50,7 @@ impl GB {
                     print!("{}", self.mmu.borrow().read_byte(0xFF01) as char);
                     self.mmu.borrow_mut().write_byte(0xFF02, 0);
                 }
+                
             }
             
             self.renderer.update();

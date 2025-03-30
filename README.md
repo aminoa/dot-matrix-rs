@@ -18,6 +18,16 @@ TODO:
 - [ ] APU
 - [ ] Savestates
 
+Out of Scope:
+
+- Pixel FIFO
+- Game Boy Color/Super Game Boy/Game Boy Advance
+
 Credits:
 
 - [GB Opcodes Table](https://gbdev.io/gb-opcodes/optables/)
+- [The Gameboy Emulator (Graphics) Development Guide](https://hacktix.github.io/GBEDG/ppu/#the-concept-of-scanlines)
+- [codeslinger - Emulating the Gameboy](http://www.codeslinger.co.uk/pages/projects/gameboy/)
+- [Pan Docs](https://gbdev.io/pandocs/)
+- [Nintendo Game Boy Color Palette](https://www.color-hex.com/color-palette/45299)
+- [Dot Matrix](https://github.com/aminoa/dot-matrix/)
