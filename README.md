@@ -31,3 +31,5 @@ Credits:
 - [Pan Docs](https://gbdev.io/pandocs/)
 - [Nintendo Game Boy Color Palette](https://www.color-hex.com/color-palette/45299)
 - [Dot Matrix](https://github.com/aminoa/dot-matrix/)
+- [The Ultimate Game Boy Talk (33c3)](https://www.youtube.com/watch?v=HyzD8pNlpwI)
+- [Reddit: Gameboy - Confusion over T and M cycle stepping through the CPU and the PPU etc](https://www.reddit.com/r/EmuDev/comments/tnh41p/gameboy_confusion_over_t_and_m_cycle_stepping/)

@@ -1,11 +1,15 @@
 pub struct MMU {
     pub ram: Vec<u8>,
-    pub cart: Vec<u8>
+    pub cart: Vec<u8>,
 }
+
+// 16 bit address bus, but not 65,536 valid addresses
+// a 64kb RAM array isn't accurate (https://gbdev.io/pandocs/Memory_Map.html)
 
 impl MMU {
     pub fn new(cart: Vec<u8>) -> MMU {
         let ram = vec![0; 0x10000];
+
         return MMU {
             ram: ram,
             cart: cart
@@ -15,9 +19,9 @@ impl MMU {
     pub fn read_byte(&self, addr: u16) -> u8 {
         match addr {
             // lock LCD for blargs tests
-            0xFF44 => 0x90,
             0x0..0x7FFF => self.cart[addr as usize],
             _ => self.ram[addr as usize]
+
         }
     }
 

@@ -150,9 +150,8 @@ impl CPU {
                 if new_tima == 0 {
                     // Reset TIMA to TMA value
                     self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, tma);
-                    let interrupt_flag = self.mmu.borrow().read_byte(InterruptSource::InterruptFlag as u16);
-                    let new_interrupt_flag = interrupt_flag | (1 << InterruptBit::Timer as u8);
-                    self.mmu.borrow_mut().write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
+                    self.request_interrupt(InterruptBit::Timer);
+
                 } else {
                     self.mmu.borrow_mut().write_byte(TimerSource::TimerCounter as u16, new_tima);
                 }
@@ -160,7 +159,6 @@ impl CPU {
                 self.tima_cycles += instruction_cycles;
             }
         }
-
     }
 
     pub fn update_div(&mut self, instruction_cycles: u32) {
@@ -211,6 +209,12 @@ impl CPU {
                 InterruptBit::Joypad => self.pc = InterruptSource::Joypad as u16,
             }
         }
+    }
+
+    pub fn request_interrupt(&mut self, interrupt_bit: InterruptBit) {
+        let interrupt_flag = self.mmu.borrow().read_byte(InterruptSource::InterruptFlag as u16);
+        let new_interrupt_flag = interrupt_flag | (1 << interrupt_bit as u8);
+        self.mmu.borrow_mut().write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
     }
 
     pub fn pop(&mut self) -> u16 {

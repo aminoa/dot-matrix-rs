@@ -8,7 +8,7 @@ use crate::renderer::Renderer;
 use crate::consts::{CB_OPCODES, CYCLES_PER_FRAME, OPCODES};
 
 pub struct GB {
-    pub cpu: CPU,
+    pub cpu: Rc<RefCell<CPU>>,
     pub mmu: Rc<RefCell<MMU>>,
     pub ppu: Rc<RefCell<PPU>>,
     pub renderer: Renderer
@@ -19,8 +19,8 @@ impl GB {
         let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
         // refcell pushes off borrow checking of mutability to runtime, rc allows multiple owners
         let mmu = Rc::new(RefCell::new(MMU::new(rom)));
-        let ppu = Rc::new(RefCell::new(PPU::new(Rc::clone(&mmu))));
-        let cpu = CPU::new(Rc::clone(&mmu));
+        let cpu = Rc::new(RefCell::new(CPU::new(Rc::clone(&mmu))));
+        let ppu = Rc::new(RefCell::new(PPU::new(Rc::clone(&mmu), Rc::clone(&cpu))));
         let renderer = Renderer::new(Rc::clone(&ppu));
  
         return GB {
@@ -35,17 +35,16 @@ impl GB {
         loop {
             let mut current_cycles: u32 = 0;
             while current_cycles < CYCLES_PER_FRAME {
-                let instruction = self.mmu.borrow().read_byte(self.cpu.pc.clone());
+                let instruction = self.mmu.borrow().read_byte(self.cpu.borrow().pc.clone());
 
-                let instruction_cycles = self.cpu.execute(instruction);
-                self.cpu.check_interrupts();
-                self.cpu.update_timers(instruction_cycles as u32);
+                let instruction_cycles = self.cpu.borrow_mut().execute(instruction);
+                self.cpu.borrow_mut().check_interrupts();
+                self.cpu.borrow_mut().update_timers(instruction_cycles as u32);
 
                 self.ppu.borrow_mut().update(instruction_cycles as u32);
 
                 current_cycles += instruction_cycles as u32;
 
-                // Blargs 
                 if self.mmu.borrow().read_byte(0xFF02) == 0x81 {
                     print!("{}", self.mmu.borrow().read_byte(0xFF01) as char);
                     self.mmu.borrow_mut().write_byte(0xFF02, 0);
