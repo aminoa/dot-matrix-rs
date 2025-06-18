@@ -14,12 +14,11 @@ TODO:
 - [x] Clock
 - [ ] PPU
 - [ ] Input (Joypad) 
-- [ ] Memory banking
-- [ ] APU
-- [ ] Savestates
 
 Out of Scope:
 
+- APU 
+- Memory banking
 - Pixel FIFO
 - Game Boy Color/Super Game Boy/Game Boy Advance
 

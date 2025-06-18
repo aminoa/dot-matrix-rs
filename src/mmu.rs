@@ -8,7 +8,8 @@ pub struct MMU {
 
 impl MMU {
     pub fn new(cart: Vec<u8>) -> MMU {
-        let ram = vec![0; 0x10000];
+        let mut ram = vec![0; 0x10000];
+        ram[0xFF00] = 0xF;
 
         return MMU {
             ram: ram,
@@ -29,6 +30,7 @@ impl MMU {
         match addr {
             // DIV writes should be trapped
             0xFF04 => self.ram[addr as usize] = 0,
+            0xFF00 => (),
             0x0..0x7FFF => self.cart[addr as usize] = value,
             _ => self.ram[addr as usize] = value
         }
