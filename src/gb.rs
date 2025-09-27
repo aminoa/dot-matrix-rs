@@ -1,18 +1,18 @@
-use std::fs;
-use std::rc::Rc;
-use std::cell::RefCell;
+use crate::consts::{CB_OPCODES, CYCLES_PER_FRAME, OPCODES};
 use crate::cpu::CPU;
 use crate::mmu::MMU;
 use crate::ppu::PPU;
 use crate::renderer::Renderer;
-use crate::consts::{CB_OPCODES, CYCLES_PER_FRAME, OPCODES};
+use std::cell::RefCell;
+use std::fs;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub struct GB {
     pub cpu: Rc<RefCell<CPU>>,
     pub mmu: Rc<RefCell<MMU>>,
     pub ppu: Rc<RefCell<PPU>>,
-    pub renderer: Renderer
+    pub renderer: Renderer,
 }
 
 impl GB {
@@ -23,13 +23,13 @@ impl GB {
         let cpu = Rc::new(RefCell::new(CPU::new(Rc::clone(&mmu))));
         let ppu = Rc::new(RefCell::new(PPU::new(Rc::clone(&mmu), Rc::clone(&cpu))));
         let renderer = Renderer::new(Rc::clone(&ppu));
- 
+
         return GB {
             cpu: cpu,
             mmu: mmu,
             ppu: ppu,
-            renderer: renderer
-        }
+            renderer: renderer,
+        };
     }
 
     pub fn run(&mut self) {
@@ -40,18 +40,19 @@ impl GB {
 
                 let instruction_cycles = self.cpu.borrow_mut().execute(instruction);
                 self.cpu.borrow_mut().check_interrupts();
-                self.cpu.borrow_mut().update_timers(instruction_cycles as u32);
+                self.cpu
+                    .borrow_mut()
+                    .update_timers(instruction_cycles as u32);
                 self.ppu.borrow_mut().update(instruction_cycles as u32);
 
                 current_cycles += instruction_cycles as u32;
-                
+
                 if self.mmu.borrow().read_byte(0xFF02) == 0x81 {
                     print!("{}", self.mmu.borrow().read_byte(0xFF01) as char);
                     self.mmu.borrow_mut().write_byte(0xFF02, 0);
                 }
-                
             }
-            
+
             current_cycles -= CYCLES_PER_FRAME;
             self.renderer.update();
         }

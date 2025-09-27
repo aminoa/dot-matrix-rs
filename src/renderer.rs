@@ -1,67 +1,71 @@
-extern crate sdl2; 
+extern crate minifb;
 
 use crate::ppu::PPU;
+use std::cell::RefCell;
 use std::rc::Rc;
-use std::cell::{Ref, RefCell}; 
 
 use crate::consts::{FRAME_RATE, SCREEN_HEIGHT, SCREEN_WIDTH};
-use sdl2::render::{Canvas, Texture, TextureCreator};
-use sdl2::video::{Window, WindowContext};
-use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::event::Event;
-use sdl2::rect::{Point, Rect};
+use minifb::{Key, Window, WindowOptions};
 
 pub struct Renderer {
-    pub canvas: Canvas<Window>,
+    pub window: Window,
+    pub buffer: Vec<u32>,
     pub ppu: Rc<RefCell<PPU>>,
-    pub sdl_context: sdl2::Sdl,
 }
 
 impl Renderer {
     pub fn new(ppu: Rc<RefCell<PPU>>) -> Renderer {
-        let sdl_context = sdl2::init().unwrap();
-        let video_subsystem = sdl_context.video().unwrap();
+        let mut window = Window::new(
+            "Dot Matrix",
+            SCREEN_WIDTH as usize,
+            SCREEN_HEIGHT as usize,
+            WindowOptions {
+                resize: false,
+                scale: minifb::Scale::X2,
+                ..WindowOptions::default()
+            },
+        )
+        .unwrap_or_else(|e| {
+            panic!("Failed to create window: {}", e);
+        });
 
-        let window = video_subsystem
-            .window("Dot Matrix", SCREEN_WIDTH, SCREEN_HEIGHT)
-            .position_centered()
-            .always_on_top()
-            .build()
-            .unwrap();
+        // Limit to max refresh rate
+        window.set_target_fps(FRAME_RATE as usize);
 
-        let mut canvas = window.into_canvas().build().unwrap();
-        canvas.set_draw_color(Color::RGB(0xFF, 0xFF, 0xFF));
-        canvas.clear();
-        canvas.present();
-
+        // Create a buffer to hold the pixel data
+        let buffer = vec![0; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize];
 
         Renderer {
-            canvas: canvas,
-            ppu: ppu,
-            sdl_context: sdl_context,
+            window,
+            buffer,
+            ppu,
         }
     }
 
     pub fn update(&mut self) {
-        let texture_creator = self.canvas.texture_creator();
-        let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, SCREEN_WIDTH, SCREEN_HEIGHT).unwrap();
+        // Get the framebuffer from the PPU
+        let framebuffer = self.ppu.borrow().framebuffer;
 
-        self.canvas.clear();
-
-        let framebuffer = self.ppu.borrow().framebuffer.clone();
-        texture.update(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT), &framebuffer, SCREEN_WIDTH as usize).unwrap();
-        self.canvas.copy(&texture, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT))).unwrap();
-        self.canvas.present();
-
-        // Handle inputs
-        for event in self.sdl_context.event_pump().unwrap().poll_iter() {
-            match event {
-                Event::Quit { .. } => {
-                    println!("Exiting...");
-                    std::process::exit(0);
-                }
-                _ => {}
-            }
+        // Convert the grayscale framebuffer to RGBA format for minifb
+        // minifb expects 0xRRGGBB format (32-bit unsigned integers)
+        for i in 0..framebuffer.len() {
+            let gray_value = framebuffer[i];
+            // Convert the grayscale value to RGB (same value for R, G, B)
+            self.buffer[i] =
+                (gray_value as u32) << 16 | (gray_value as u32) << 8 | (gray_value as u32);
         }
+
+        // Update the window with the new pixel data
+        if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
+            println!("Exiting...");
+            std::process::exit(0);
+        }
+
+        // Display the framebuffer
+        self.window
+            .update_with_buffer(&self.buffer, SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize)
+            .unwrap_or_else(|e| {
+                panic!("Failed to update window: {}", e);
+            });
     }
 }
