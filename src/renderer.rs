@@ -32,8 +32,8 @@ impl Renderer {
         // Limit to max refresh rate
         window.set_target_fps(FRAME_RATE as usize);
 
-        // Create a buffer to hold the pixel data
-        let buffer = vec![0; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize];
+        // Create a buffer to hold the pixel data (RGB format for minifb)
+        let buffer = vec![0xFFFFFF; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize];
 
         Renderer {
             window,
