@@ -1,5 +1,6 @@
 extern crate minifb;
 
+use crate::joypad::{Joypad, JoypadButton};
 use crate::ppu::PPU;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,10 +12,11 @@ pub struct Renderer {
     pub window: Window,
     pub buffer: Vec<u32>,
     pub ppu: Rc<RefCell<PPU>>,
+    pub joypad: Rc<RefCell<Joypad>>,
 }
 
 impl Renderer {
-    pub fn new(ppu: Rc<RefCell<PPU>>) -> Renderer {
+    pub fn new(ppu: Rc<RefCell<PPU>>, joypad: Rc<RefCell<Joypad>>) -> Renderer {
         let mut window = Window::new(
             "Dot Matrix",
             SCREEN_WIDTH as usize,
@@ -39,6 +41,7 @@ impl Renderer {
             window,
             buffer,
             ppu,
+            joypad,
         }
     }
 
@@ -55,7 +58,9 @@ impl Renderer {
                 (gray_value as u32) << 16 | (gray_value as u32) << 8 | (gray_value as u32);
         }
 
-        // Update the window with the new pixel data
+        self.handle_input();
+
+        // Check if window should close
         if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
             println!("Exiting...");
             std::process::exit(0);
@@ -67,5 +72,27 @@ impl Renderer {
             .unwrap_or_else(|e| {
                 panic!("Failed to update window: {}", e);
             });
+    }
+
+    fn handle_input(&mut self) {
+        self.handle_key(Key::Up, JoypadButton::Up);
+        self.handle_key(Key::Down, JoypadButton::Down);
+        self.handle_key(Key::Left, JoypadButton::Left);
+        self.handle_key(Key::Right, JoypadButton::Right);
+
+        self.handle_key(Key::Z, JoypadButton::B);
+        self.handle_key(Key::X, JoypadButton::A);
+
+        self.handle_key(Key::Space, JoypadButton::Select);
+        self.handle_key(Key::Enter, JoypadButton::Start);
+    }
+
+    fn handle_key(&self, key: Key, button: JoypadButton) {
+        let mut joypad = self.joypad.borrow_mut();
+        if self.window.is_key_down(key) {
+            joypad.press_button(button);
+        } else {
+            joypad.release_button(button);
+        }
     }
 }

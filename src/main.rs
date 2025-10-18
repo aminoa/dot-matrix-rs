@@ -1,12 +1,13 @@
-mod gb;
+mod consts;
 mod cpu;
+mod gb;
+mod joypad;
 mod mmu;
 mod ppu;
-mod consts;
 mod renderer;
 
-use gb::GB;
 use clap::Parser;
+use gb::GB;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

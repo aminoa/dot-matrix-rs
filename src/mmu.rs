@@ -1,38 +1,40 @@
+use crate::joypad::Joypad;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub struct MMU {
     pub ram: Vec<u8>,
     pub cart: Vec<u8>,
+    pub joypad: Rc<RefCell<Joypad>>,
 }
 
-// 16 bit address bus, but not 65,536 valid addresses
-// a 64kb RAM array isn't accurate (https://gbdev.io/pandocs/Memory_Map.html)
-
 impl MMU {
-    pub fn new(cart: Vec<u8>) -> MMU {
+    pub fn new(cart: Vec<u8>, joypad: Rc<RefCell<Joypad>>) -> MMU {
         let mut ram = vec![0; 0x10000];
-        ram[0xFF00] = 0xF;
+        ram[0xFF00] = 0xCF; // Initialize joypad register with default value (all buttons released)
 
         return MMU {
             ram: ram,
-            cart: cart
-        }
+            cart: cart,
+            joypad: joypad,
+        };
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
         match addr {
-            // lock LCD for blargs tests
+            0xFF00 => self.joypad.borrow().read(),
+            0xFF01 => 0xFF, // Dummy value for serial data register
             0x0..0x7FFF => self.cart[addr as usize],
-            _ => self.ram[addr as usize]
-
+            _ => self.ram[addr as usize],
         }
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
         match addr {
-            // DIV writes should be trapped
+            0xFF00 => self.joypad.borrow_mut().write(value),
             0xFF04 => self.ram[addr as usize] = 0,
-            0xFF00 => (),
-            0x0..0x7FFF => self.cart[addr as usize] = value,
-            _ => self.ram[addr as usize] = value
+            0x0..0x7FFF => (), // Ignore writes to ROM
+            _ => self.ram[addr as usize] = value,
         }
     }
 
