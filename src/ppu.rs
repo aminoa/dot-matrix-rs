@@ -37,11 +37,11 @@ pub enum PPUMode {
 }
 
 pub enum LCDCBits {
-    BgWindowEnable = 0,
-    ObjDisplayEnable = 1,
-    ObjDisplaySize = 2,
-    BgTileMapArea = 3,
-    BgAndWindowTileDataSelect = 4,
+    BackgroundWindowEnable = 0,
+    ObjectDisplayEnable = 1,
+    ObjectDisplaySize = 2,
+    BackgroundTileMapArea = 3,
+    BackgroundAndWindowTileDataSelect = 4,
     WindowDisplayEnable = 5,
     WindowTileMapDisplaySelect = 6,
     LCDDisplayEnable = 7,
@@ -132,33 +132,58 @@ impl PPU {
     }
 
     pub fn draw_scanline(&mut self, scanline: u8) {
-        // draw background scanline
         let lcdc = self.mmu.borrow().read_byte(PPUMemory::LCDC as u16);
 
         if (lcdc & (1 << LCDCBits::LCDDisplayEnable as u8)) == 0 {
             return;
         }
 
-        if (lcdc & (1 << LCDCBits::BgWindowEnable as u8)) != 0 {
+        if (lcdc & (1 << LCDCBits::BackgroundWindowEnable as u8)) != 0 {
             self.draw_background_scanline(scanline);
         }
     }
 
-    // TODO: Only using $9800-9BFF tile map, using $8000 method only
     // TODO: no scrolling, no palette selection
     pub fn draw_background_scanline(&mut self, scanline: u8) {
         for x in 0..SCREEN_WIDTH as u16 {
-            let tile_map_base: u16 = 0x9800;
-            let tile_data_base: u16 = 0x8000;
+            // getting tile map and data base
+            let tile_map_base_bit = (self.mmu.borrow().read_byte(PPUMemory::LCDC as u16)
+                >> LCDCBits::BackgroundTileMapArea as u8)
+                & 1;
+
+            let tile_map_base: u16 = if tile_map_base_bit == 0 {
+                0x9800
+            } else {
+                0x9C00
+            };
+
+            let tile_data_base_bit = (self.mmu.borrow().read_byte(PPUMemory::LCDC as u16)
+                >> LCDCBits::BackgroundAndWindowTileDataSelect as u8)
+                & 1;
+
+            let tile_data_base: u16 = if tile_data_base_bit == 0 {
+                0x8800
+            } else {
+                0x8000
+            };
+
             let tile_map_offset: u16 = ((scanline as u16 / 8) * 32) + (x / 8);
-            let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset) as u16;
+            let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset);
+
+            // 8800 + (127 + 128) * 16 = 97F0 (can grab the last 2 bytes of memory for tile data)
+            // 8800 + (-128 + 128) * 16 = 8800
+            let tile_data_address: u16 = if tile_data_base == 0x8000 {
+                tile_data_base + (tile_index as u16 * 16)
+            } else {
+                let signed_index = tile_index as i8;
+                tile_data_base + ((signed_index as i16 + 128) * 16) as u16
+            };
+
+            let tile_data_line = (scanline % 8) as u16; //within the tile, the line looked at
 
             // 2BPP calculations below to get a pixel
             // Ex. 8000 + (2F * 0x10) = 82F0
-            // Get the two bytes for the line, we
-            let tile_data_address = tile_data_base + (tile_index * 16);
-            let tile_data_line = (scanline % 8) as u16; //within the tile, the line looked at
-
+            // Get the two bytes for the line (there are 16 bytes per tile, 2 bytes per line)
             let tile_data_byte_1 = self
                 .mmu
                 .borrow()
@@ -168,6 +193,7 @@ impl PPU {
                 .borrow()
                 .read_byte(tile_data_address + (tile_data_line * 2 + 1));
 
+            // Get the two bits for the pixel within the line (that's why x is used)
             let tile_data_byte_index = 7 - (x % 8);
             let tile_data_bit_1 = (tile_data_byte_1 >> tile_data_byte_index) & 1;
             let tile_data_bit_2 = (tile_data_byte_2 >> tile_data_byte_index) & 1;

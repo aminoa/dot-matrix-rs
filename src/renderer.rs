@@ -83,8 +83,8 @@ impl Renderer {
         self.handle_key(Key::Z, JoypadButton::B);
         self.handle_key(Key::X, JoypadButton::A);
 
-        self.handle_key(Key::Space, JoypadButton::Select);
         self.handle_key(Key::Enter, JoypadButton::Start);
+        self.handle_key(Key::Space, JoypadButton::Select);
     }
 
     fn handle_key(&self, key: Key, button: JoypadButton) {

@@ -1,6 +1,6 @@
 # dot-matrix-rs
 
-This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.com/aminoa/dot-matrix), into Rust. This emulator was built to help me learn rust as well as get a better understanding of the Game Boy hardware. 
+This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.com/aminoa/dot-matrix), into Rust. This emulator was built to help me learn rust as well as get a better understanding of the Game Boy hardware.
 
 ## Implementation Differences from dot-matrix (C++)
 
@@ -8,19 +8,20 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 TODO:
 
+- [ ] PPU
+- [ ] Memory banking
+
 - [x] Generate macro for register getter/setters
-- [x] Pass Blarg's CPU test suite 
+- [x] Pass Blarg's CPU test suite
 - [x] Timing
 - [x] Clock
-- [ ] PPU
-- [ ] Input (Joypad) 
+- [x] Input (Joypad)
 
 Out of Scope:
 
-- APU 
-- Memory banking
+- APU
 - Pixel FIFO
-- Game Boy Color/Super Game Boy/Game Boy Advance
+- Game Boy Color/Game Boy Advance
 
 Credits:
 
