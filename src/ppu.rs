@@ -18,16 +18,16 @@ pub struct PPU {
 pub enum PPUMemory {
     LCDC = 0xFF40,
     STAT = 0xFF41,
-    SCY = 0xFF42,
-    SCX = 0xFF43,
+    SCY = 0xFF42, //bg
+    SCX = 0xFF43, //bg
     LY = 0xFF44,
     LYC = 0xFF45,
     DMA = 0xFF46,
     BGP = 0xFF47,
     OBP0 = 0xFF48,
     OBP1 = 0xFF49,
-    WY = 0xFF4A,
-    WX = 0xFF4B,
+    WY = 0xFF4A, //window
+    WX = 0xFF4B, //window
 }
 pub enum PPUMode {
     HBlank = 0,
@@ -143,7 +143,6 @@ impl PPU {
         }
     }
 
-    // TODO: no scrolling, no palette selection
     pub fn draw_background_scanline(&mut self, scanline: u8) {
         for x in 0..SCREEN_WIDTH as u16 {
             // getting tile map and data base
@@ -167,7 +166,16 @@ impl PPU {
                 0x8000
             };
 
-            let tile_map_offset: u16 = ((scanline as u16 / 8) * 32) + (x / 8);
+            // 32 tiles per row so going down one row requires * 32, / 8 because each tile is 8 * 8 px
+            let scx = self.mmu.borrow().read_byte(PPUMemory::SCX as u16);
+            let scy = self.mmu.borrow().read_byte(PPUMemory::SCY as u16);
+            let background_x = x.wrapping_add(scx as u16) % 256;
+            let background_y = scanline.wrapping_add(scy) as u16 % 256;
+
+            let tile_map_row_offset = ((background_y / 8) * 32) as u16;
+            let tile_map_col_offset = (background_x / 8) as u16;
+
+            let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
             let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset);
 
             // 8800 + (127 + 128) * 16 = 97F0 (can grab the last 2 bytes of memory for tile data)
@@ -179,7 +187,7 @@ impl PPU {
                 tile_data_base + ((signed_index as i16 + 128) * 16) as u16
             };
 
-            let tile_data_line = (scanline % 8) as u16; //within the tile, the line looked at
+            let tile_data_line = (background_y % 8) as u16; //within the tile, the line looked at
 
             // 2BPP calculations below to get a pixel
             // Ex. 8000 + (2F * 0x10) = 82F0
@@ -194,21 +202,22 @@ impl PPU {
                 .read_byte(tile_data_address + (tile_data_line * 2 + 1));
 
             // Get the two bits for the pixel within the line (that's why x is used)
-            let tile_data_byte_index = 7 - (x % 8);
+            let tile_data_byte_index = 7 - (background_x % 8);
             let tile_data_bit_1 = (tile_data_byte_1 >> tile_data_byte_index) & 1;
             let tile_data_bit_2 = (tile_data_byte_2 >> tile_data_byte_index) & 1;
-            // originally called tile_data_bit_color, values from 0 - 3
-            let color_index = (tile_data_bit_1 << 1) | tile_data_bit_2;
 
-            // TODO: use BGP to map color index to actual color
-            // let palette = self.mmu.borrow().read_byte(PPUMemory::BGP as u16);
-            let color = match color_index {
+            // originally called tile_data_bit_color, values from 0 - 3
+            let color_index = (tile_data_bit_2 << 1) | tile_data_bit_1;
+            let palette = self.mmu.borrow().read_byte(PPUMemory::BGP as u16);
+
+            let color = match (palette >> (color_index * 2)) & 0b11 {
                 0 => COLOR_WHITE,
                 1 => COLOR_LIGHT_GRAY,
                 2 => COLOR_DARK_GRAY,
                 3 => COLOR_BLACK,
                 _ => COLOR_WHITE,
             };
+
             self.framebuffer[((scanline as u32 * SCREEN_WIDTH) + x as u32) as usize] = color;
         }
     }
