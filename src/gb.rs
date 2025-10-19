@@ -19,14 +19,14 @@ pub struct GB {
 
 impl GB {
     pub fn new(rom_path: String) -> GB {
-        let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
-        let cart = Cart::from_rom(rom);
         // refcell pushes off borrow checking of mutability to runtime, rc allows multiple owners
+        let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
+        let cart = Rc::new(RefCell::new(Cart::from_rom(rom)));
         let joypad = Rc::new(RefCell::new(Joypad::new()));
-        let mmu = Rc::new(RefCell::new(MMU::new(cart, Rc::clone(&joypad))));
+        let mmu = Rc::new(RefCell::new(MMU::new(Rc::clone(&cart), Rc::clone(&joypad))));
         let cpu = Rc::new(RefCell::new(CPU::new(Rc::clone(&mmu))));
         let ppu = Rc::new(RefCell::new(PPU::new(Rc::clone(&mmu), Rc::clone(&cpu))));
-        let renderer = Renderer::new(Rc::clone(&ppu), Rc::clone(&joypad));
+        let renderer = Renderer::new(Rc::clone(&ppu), Rc::clone(&joypad), Rc::clone(&cart));
 
         return GB {
             cpu: cpu,

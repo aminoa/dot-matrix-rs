@@ -1733,7 +1733,7 @@ impl CPU {
                 self.pc = 0x38;
                 16
             }
-            _ => unreachable!(), // _ => println!("Error: Opcode unknown: {:X}; something has gone seriously wrong", opcode),
+            _ => unreachable!(),
         }
     }
 

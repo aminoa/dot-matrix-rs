@@ -1,5 +1,6 @@
 extern crate minifb;
 
+use crate::cart::Cart;
 use crate::joypad::{Joypad, JoypadButton};
 use crate::ppu::PPU;
 use std::cell::RefCell;
@@ -13,12 +14,24 @@ pub struct Renderer {
     pub buffer: Vec<u32>,
     pub ppu: Rc<RefCell<PPU>>,
     pub joypad: Rc<RefCell<Joypad>>,
+    pub cart: Rc<RefCell<Cart>>,
 }
 
 impl Renderer {
-    pub fn new(ppu: Rc<RefCell<PPU>>, joypad: Rc<RefCell<Joypad>>) -> Renderer {
+    pub fn new(
+        ppu: Rc<RefCell<PPU>>,
+        joypad: Rc<RefCell<Joypad>>,
+        cart: Rc<RefCell<Cart>>,
+    ) -> Renderer {
+        let raw_title = cart.borrow().title.clone();
+        // Remove any NUL bytes (unsafe for C strings) by truncating at the first NUL.
+        let title = match raw_title.find('\0') {
+            Some(idx) => raw_title[..idx].to_string(),
+            None => raw_title,
+        };
+
         let mut window = Window::new(
-            "Dot Matrix",
+            title.as_str(),
             SCREEN_WIDTH as usize,
             SCREEN_HEIGHT as usize,
             WindowOptions {
@@ -42,6 +55,7 @@ impl Renderer {
             buffer,
             ppu,
             joypad,
+            cart,
         }
     }
 

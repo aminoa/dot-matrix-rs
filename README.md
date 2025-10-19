@@ -8,11 +8,10 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - PPU background rendering is more accurate and window/object rendering has been added
 - Joypad inputs
 
-## TODO:
+## TODO
 
-- [ ] PPU
 - [ ] Memory banking
-
+- [x] PPU
 - [x] Generate macro for register getter/setters
 - [x] Pass Blarg's CPU test suite
 - [x] Timing

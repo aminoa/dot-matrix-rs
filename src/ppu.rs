@@ -263,7 +263,7 @@ impl PPU {
             };
 
             let window_y = scanline - wy;
-            let window_x = x - wx as u16;
+            let window_x = x - (wx as u16 - 7);
 
             let tile_map_row_offset = ((window_x / 8) * 32) as u16;
             let tile_map_col_offset = (window_y / 8) as u16;

@@ -5,12 +5,12 @@ use std::rc::Rc;
 
 pub struct MMU {
     pub ram: Vec<u8>,
-    pub cart: Cart,
+    pub cart: Rc<RefCell<Cart>>,
     pub joypad: Rc<RefCell<Joypad>>,
 }
 
 impl MMU {
-    pub fn new(cart: Cart, joypad: Rc<RefCell<Joypad>>) -> MMU {
+    pub fn new(cart: Rc<RefCell<Cart>>, joypad: Rc<RefCell<Joypad>>) -> MMU {
         let mut ram = vec![0; 0x10000];
         ram[0xFF00] = 0xCF; // Initialize joypad register with default value (all buttons released)
 
@@ -25,13 +25,16 @@ impl MMU {
         match addr {
             0xFF00 => self.joypad.borrow().read(),
             0xFF01 => 0xFF, // Dummy value for serial data register
-            0x0..=0x7FFF => self.cart.rom[addr as usize],
+            0x0..=0x7FFF => self.cart.borrow().read_rom(addr),
             _ => self.ram[addr as usize],
         }
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
         match addr {
+            0x0..0x1FFF => self.cart.borrow_mut().enable_ram(value),
+            0x2000..0x3FFF => self.cart.borrow_mut().select_rom_bank(value),
+
             0xFF00 => self.joypad.borrow_mut().write(value),
             0xFF46 => self.oam_dma_transfer(value),
             0x0..=0x7FFF => (), // Ignore writes to ROM
