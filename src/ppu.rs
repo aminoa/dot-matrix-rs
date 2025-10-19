@@ -29,6 +29,8 @@ pub enum PPUMemory {
     WY = 0xFF4A, //window
     WX = 0xFF4B, //window
 }
+
+#[derive(Clone)]
 pub enum PPUMode {
     HBlank = 0,
     VBlank = 1,
@@ -54,6 +56,15 @@ pub enum LCDCBits {
     LCDDisplayEnable = 7,
 }
 
+pub enum STATBit {
+    PPUModeFlag0 = 0,
+    PPUModeFlag1 = 1,
+    LYCEqualsLYInterrupt = 2,
+    Mode0IntSelect = 3,
+    Mode1IntSelect = 4,
+    Mode2IntSelect = 5,
+}
+
 // Color constants for better readability
 pub const COLOR_WHITE: u8 = 0xFF;
 pub const COLOR_LIGHT_GRAY: u8 = 0xAA;
@@ -75,6 +86,10 @@ impl PPU {
 
     pub fn update(&mut self, cycles: u32) {
         let scanline = self.mmu.borrow().read_byte(PPUMemory::LY as u16);
+        let stat = self.mmu.borrow().read_byte(PPUMemory::STAT as u16);
+
+        self.update_stat(scanline);
+
         self.current_cycles += cycles;
 
         match self.current_mode {
@@ -83,6 +98,7 @@ impl PPU {
                 if self.current_cycles > 80 {
                     self.current_cycles -= 80;
                     self.current_mode = PPUMode::VRAM;
+                    self.update_stat(scanline);
                 }
             }
             // Mode 3
@@ -90,21 +106,19 @@ impl PPU {
                 if self.current_cycles > 172 {
                     self.current_cycles -= 172;
                     self.current_mode = PPUMode::HBlank;
-                    // Render the current scanline
-                    if (self.mmu.borrow().read_byte(PPUMemory::LCDC as u16)
-                        & (1 << LCDCBits::LCDDisplayEnable as u8))
-                        != 0
-                    {
-                        self.draw_scanline(scanline);
+                    self.draw_scanline(scanline);
+
+                    if (stat & (1 << STATBit::Mode0IntSelect as u8)) != 0 {
+                        self.cpu.borrow_mut().request_interrupt(InterruptBit::STAT);
                     }
                 }
             }
             // Mode 0
             PPUMode::HBlank => {
                 if self.current_cycles > 204 {
+                    self.update_stat(scanline);
                     self.current_cycles -= 204;
                     if scanline == SCREEN_HEIGHT as u8 - 1 {
-                        // TODO: more interrupt sources
                         self.cpu
                             .borrow_mut()
                             .request_interrupt(InterruptBit::VBlank);
@@ -132,10 +146,32 @@ impl PPU {
                             .write_byte(PPUMemory::LY as u16, scanline + 1);
                     }
 
+                    self.update_stat(scanline);
                     self.current_cycles -= 456;
                 }
             }
         }
+    }
+
+    pub fn update_stat(&mut self, scanline: u8) {
+        let mut stat = self.mmu.borrow().read_byte(PPUMemory::STAT as u16);
+        let lyc = self.mmu.borrow().read_byte(PPUMemory::LYC as u16);
+
+        if scanline == lyc {
+            stat |= 1 << STATBit::LYCEqualsLYInterrupt as u8;
+            if (stat & (1 << STATBit::LYCEqualsLYInterrupt as u8)) != 0 {
+                self.cpu.borrow_mut().request_interrupt(InterruptBit::STAT);
+            }
+        } else {
+            stat &= !(1 << STATBit::LYCEqualsLYInterrupt as u8);
+        }
+
+        stat &= !0b11; // Clear mode bits
+        stat |= self.current_mode.clone() as u8;
+
+        self.mmu
+            .borrow_mut()
+            .write_byte(PPUMemory::STAT as u16, stat);
     }
 
     pub fn draw_scanline(&mut self, scanline: u8) {
@@ -148,7 +184,6 @@ impl PPU {
         if (lcdc & (1 << LCDCBits::BackgroundWindowEnable as u8)) != 0 {
             self.draw_background_scanline(scanline);
         }
-
         if (lcdc & (1 << LCDCBits::WindowDisplayEnable as u8)) != 0 {
             self.draw_window_scanline(scanline);
         }
@@ -162,6 +197,7 @@ impl PPU {
         for x in 0..SCREEN_WIDTH as u16 {
             // getting tile map and data base
             let lcdc = self.mmu.borrow().read_byte(PPUMemory::LCDC as u16);
+
             let tile_map_base_bit = (lcdc >> LCDCBits::BackgroundTileMapArea as u8) & 1;
 
             let tile_map_base: u16 = if tile_map_base_bit == 0 {
@@ -240,7 +276,7 @@ impl PPU {
             let wx = self.mmu.borrow().read_byte(PPUMemory::WX as u16);
             let wy = self.mmu.borrow().read_byte(PPUMemory::WY as u16);
 
-            if scanline < wy || x < wx as u16 - 7 {
+            if scanline < wy || (x as i16 - wx as i16) <= 7 {
                 continue;
             }
 
@@ -263,10 +299,10 @@ impl PPU {
             };
 
             let window_y = scanline - wy;
-            let window_x = x - (wx as u16 - 7);
+            let window_x = x + 1 - wx as u16 - 7;
 
-            let tile_map_row_offset = ((window_x / 8) * 32) as u16;
-            let tile_map_col_offset = (window_y / 8) as u16;
+            let tile_map_row_offset = ((window_y / 8) * 32) as u16;
+            let tile_map_col_offset = (window_x / 8) as u16;
 
             let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
             let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset);

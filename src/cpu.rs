@@ -17,7 +17,7 @@ pub enum FlagRegister {
 #[derive(Copy, Clone)]
 pub enum InterruptBit {
     VBlank = 0,
-    LCD = 1,
+    STAT = 1,
     Timer = 2,
     Serial = 3,
     Joypad = 4,
@@ -25,7 +25,7 @@ pub enum InterruptBit {
 
 pub enum InterruptSource {
     VBlank = 0x40,
-    LCD = 0x48,
+    STAT = 0x48,
     Timer = 0x50,
     Serial = 0x58,
     Joypad = 0x60,
@@ -205,7 +205,7 @@ impl CPU {
 
         if self.ime && (interrupt_flag & interrupt_enable) != 0 {
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::VBlank);
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::LCD);
+            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::STAT);
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Timer);
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Serial);
             self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Joypad);
@@ -230,7 +230,7 @@ impl CPU {
             self.push(self.pc);
             match interrupt_bit {
                 InterruptBit::VBlank => self.pc = InterruptSource::VBlank as u16,
-                InterruptBit::LCD => self.pc = InterruptSource::LCD as u16,
+                InterruptBit::STAT => self.pc = InterruptSource::STAT as u16,
                 InterruptBit::Timer => self.pc = InterruptSource::Timer as u16,
                 InterruptBit::Serial => self.pc = InterruptSource::Serial as u16,
                 InterruptBit::Joypad => self.pc = InterruptSource::Joypad as u16,
@@ -618,6 +618,7 @@ impl CPU {
         } else {
             self.pc += OPCODES[opcode as usize].bytes as u16;
         }
+
         match opcode {
             // 8 bit load instructions
             0x02 => {

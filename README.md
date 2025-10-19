@@ -2,21 +2,22 @@
 
 This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.com/aminoa/dot-matrix), into Rust. This emulator was built to help me learn rust as well as get a better understanding of the Game Boy hardware.
 
+## Showcase
+
+| Title | Screenshot |
+| --- | --- |
+| Tetris | | |
+
+| Blargs CPU Tests | | |
+
+## Building
+
 ## Implementation Differences from dot-matrix (C++)
 
 - Timing (both the clock and timers) is properly emulated
 - PPU background rendering is more accurate and window/object rendering has been added
 - Joypad inputs
-
-## TODO
-
-- [ ] Memory banking
-- [x] PPU
-- [x] Generate macro for register getter/setters
-- [x] Pass Blarg's CPU test suite
-- [x] Timing
-- [x] Clock
-- [x] Input (Joypad)
+- Memory banking
 
 ## Out of Scope:
 
