@@ -4,9 +4,11 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 ## Implementation Differences from dot-matrix (C++)
 
-- Timing (both the clock and timers) properly emulated
+- Timing (both the clock and timers) is properly emulated
+- PPU background rendering is more accurate and window/object rendering has been added
+- Joypad inputs
 
-TODO:
+## TODO:
 
 - [ ] PPU
 - [ ] Memory banking
@@ -17,13 +19,12 @@ TODO:
 - [x] Clock
 - [x] Input (Joypad)
 
-Out of Scope:
+## Out of Scope:
 
-- APU
 - Pixel FIFO
-- Game Boy Color/Game Boy Advance
+- APU
 
-Credits:
+## Credits:
 
 - [GB Opcodes Table](https://gbdev.io/gb-opcodes/optables/)
 - [The Gameboy Emulator (Graphics) Development Guide](https://hacktix.github.io/GBEDG/ppu/#the-concept-of-scanlines)

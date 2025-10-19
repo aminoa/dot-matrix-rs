@@ -1,3 +1,4 @@
+mod cart;
 mod consts;
 mod cpu;
 mod gb;
