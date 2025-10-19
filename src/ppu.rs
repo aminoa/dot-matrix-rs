@@ -18,8 +18,8 @@ pub struct PPU {
 pub enum PPUMemory {
     LCDC = 0xFF40,
     STAT = 0xFF41,
-    SCY = 0xFF42, //bg
-    SCX = 0xFF43, //bg
+    SCY = 0xFF42, //background
+    SCX = 0xFF43, //background
     LY = 0xFF44,
     LYC = 0xFF45,
     DMA = 0xFF46,
@@ -36,10 +36,17 @@ pub enum PPUMode {
     VRAM = 3,
 }
 
+pub enum OAMAttributesBits {
+    Priority = 7,
+    YFlip = 6,
+    XFlip = 5,
+    PaletteNumber = 4,
+}
+
 pub enum LCDCBits {
     BackgroundWindowEnable = 0,
     ObjectDisplayEnable = 1,
-    ObjectDisplaySize = 2,
+    ObjectSize = 2,
     BackgroundTileMapArea = 3,
     BackgroundAndWindowTileDataSelect = 4,
     WindowDisplayEnable = 5,
@@ -233,7 +240,7 @@ impl PPU {
             let wx = self.mmu.borrow().read_byte(PPUMemory::WX as u16);
             let wy = self.mmu.borrow().read_byte(PPUMemory::WY as u16);
 
-            if scanline < wy || x + 7 < wx as u16 {
+            if scanline < wy || x < wx as u16 - 7 {
                 continue;
             }
 
@@ -255,8 +262,6 @@ impl PPU {
                 0x8000
             };
 
-            // let background_x = x.wrapping_add(scx as u16) % 256;
-            // let background_y = scanline.wrapping_add(scy) as u16 % 256;
             let window_y = scanline - wy;
             let window_x = x - wx as u16;
 
@@ -266,8 +271,6 @@ impl PPU {
             let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
             let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset);
 
-            // 8800 + (127 + 128) * 16 = 97F0 (can grab the last 2 bytes of memory for tile data)
-            // 8800 + (-128 + 128) * 16 = 8800
             let tile_data_address: u16 = if tile_data_base == 0x8000 {
                 tile_data_base + (tile_index as u16 * 16)
             } else {
@@ -277,9 +280,6 @@ impl PPU {
 
             let tile_data_line = (window_y % 8) as u16; //within the tile, the line looked at
 
-            // 2BPP calculations below to get a pixel
-            // Ex. 8000 + (2F * 0x10) = 82F0
-            // Get the two bytes for the line (there are 16 bytes per tile, 2 bytes per line)
             let tile_data_byte_1 = self
                 .mmu
                 .borrow()
@@ -289,12 +289,10 @@ impl PPU {
                 .borrow()
                 .read_byte(tile_data_address + (tile_data_line * 2 + 1));
 
-            // Get the two bits for the pixel within the line (that's why x is used)
             let tile_data_byte_index = 7 - (window_x % 8);
             let tile_data_bit_1 = (tile_data_byte_1 >> tile_data_byte_index) & 1;
             let tile_data_bit_2 = (tile_data_byte_2 >> tile_data_byte_index) & 1;
 
-            // originally called tile_data_bit_color, values from 0 - 3
             let color_index = (tile_data_bit_2 << 1) | tile_data_bit_1;
             let palette = self.mmu.borrow().read_byte(PPUMemory::BGP as u16);
 
@@ -310,5 +308,117 @@ impl PPU {
         }
     }
 
-    pub fn draw_sprites_scanline(&mut self, scanline: u8) {}
+    pub fn draw_sprites_scanline(&mut self, scanline: u8) {
+        let lcdc = self.mmu.borrow().read_byte(PPUMemory::LCDC as u16);
+        let sprite_size_bit = (lcdc >> LCDCBits::ObjectSize as u8) & 1;
+        let sprite_height: u8 = if sprite_size_bit == 0 { 8 } else { 16 };
+        let mut visible_sprites: Vec<(i16, i16, u8, u8)> = Vec::with_capacity(10);
+
+        let oam_base: u16 = 0xFE00;
+
+        // Scanline priority: OAM scan to hold 10 sprites
+        for sprite_index in 0..40 {
+            // each sprite is 4 bytes in OAM
+            let oam_addr = oam_base + sprite_index * 4;
+
+            let sprite_y = self.mmu.borrow().read_byte(oam_addr) as i16 - 16;
+            let sprite_x = self.mmu.borrow().read_byte(oam_addr + 1) as i16 - 8;
+            let tile_index = self.mmu.borrow().read_byte(oam_addr + 2);
+            let attributes = self.mmu.borrow().read_byte(oam_addr + 3);
+
+            if sprite_y <= (scanline as i16) && (scanline as i16) < sprite_y + sprite_height as i16
+            {
+                visible_sprites.push((sprite_x, sprite_y, tile_index, attributes));
+                if visible_sprites.len() >= 10 {
+                    break;
+                }
+            }
+        }
+
+        // Draw sprites
+        for (sprite_x, sprite_y, tile_index, attributes) in visible_sprites.into_iter() {
+            let palette_select = (attributes >> OAMAttributesBits::PaletteNumber as u8) & 1;
+            let x_flip = ((attributes >> OAMAttributesBits::XFlip as u8) & 1) != 0;
+            let y_flip = ((attributes >> OAMAttributesBits::YFlip as u8) & 1) != 0;
+            let background_priority = ((attributes >> OAMAttributesBits::Priority as u8) & 1) != 0;
+
+            let actual_tile_index = if sprite_height == 16 {
+                // For 8x16 sprites, this ensures the address lsb is 0 and the second tile index is 1
+                // "0xNN & $FE, $0xNN | $01"
+                tile_index & 0xFE
+            } else {
+                tile_index
+            };
+
+            let mut sprite_line = scanline as i16 - sprite_y;
+            if y_flip {
+                sprite_line = sprite_height as i16 - 1 - sprite_line;
+            }
+
+            let tile_for_line = if sprite_height == 16 && sprite_line >= 8 {
+                actual_tile_index.wrapping_add(1)
+            } else {
+                actual_tile_index
+            };
+
+            // Sprites always use 0x8000 unsigned addressing
+            let tile_data_base: u16 = 0x8000;
+            let tile_data_address: u16 = tile_data_base + (tile_for_line as u16 * 16);
+
+            let tile_data_line = (sprite_line as u16) % 8;
+
+            let byte1 = self
+                .mmu
+                .borrow()
+                .read_byte(tile_data_address + tile_data_line * 2);
+
+            let byte2 = self
+                .mmu
+                .borrow()
+                .read_byte(tile_data_address + tile_data_line * 2 + 1);
+
+            for pixel in 0u8..8u8 {
+                let bit_index_u8 = if x_flip { pixel } else { 7u8 - pixel };
+                let shift = bit_index_u8 as u32;
+                let bit1 = (byte1 >> shift) & 1;
+                let bit2 = (byte2 >> shift) & 1;
+                let color_index = (bit2 << 1) | bit1;
+
+                // Color index 0 is transparent for sprites
+                if color_index == 0 {
+                    continue;
+                }
+                let palette = self
+                    .mmu
+                    .borrow()
+                    .read_byte(PPUMemory::OBP0 as u16 + palette_select as u16);
+
+                let color = match (palette >> (color_index * 2)) & 0b11 {
+                    0 => COLOR_WHITE,
+                    1 => COLOR_LIGHT_GRAY,
+                    2 => COLOR_DARK_GRAY,
+                    3 => COLOR_BLACK,
+                    _ => COLOR_WHITE,
+                };
+
+                let px = sprite_x + pixel as i16;
+                if px < 0 || px >= SCREEN_WIDTH as i16 {
+                    continue;
+                }
+
+                let framebuffer_index = ((scanline as u32 * SCREEN_WIDTH) + px as u32) as usize;
+
+                // If background priority is set, sprite is behind background except where background color is 0 (white)
+                if background_priority {
+                    let bg_color = self.framebuffer[framebuffer_index];
+                    if bg_color != COLOR_WHITE {
+                        // background has priority, skip drawing this pixel
+                        continue;
+                    }
+                }
+
+                self.framebuffer[framebuffer_index] = color;
+            }
+        }
+    }
 }
