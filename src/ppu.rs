@@ -250,7 +250,7 @@ impl PPU {
                 .borrow()
                 .read_byte(tile_data_address + (tile_data_line * 2 + 1));
 
-            // Get the two bits for the pixel within the line (that's why x is used)
+            // Get the two bits for the pixel within the line (that's why x is used), bits go from 7 - 0
             let tile_data_byte_index = 7 - (background_x % 8);
             let tile_data_bit_1 = (tile_data_byte_1 >> tile_data_byte_index) & 1;
             let tile_data_bit_2 = (tile_data_byte_2 >> tile_data_byte_index) & 1;
@@ -276,7 +276,7 @@ impl PPU {
             let wx = self.mmu.borrow().read_byte(PPUMemory::WX as u16);
             let wy = self.mmu.borrow().read_byte(PPUMemory::WY as u16);
 
-            if scanline < wy || (x as i16 - wx as i16) <= 7 {
+            if scanline < wy || x + 7 < wx as u16 {
                 continue;
             }
 
@@ -299,8 +299,7 @@ impl PPU {
             };
 
             let window_y = scanline - wy;
-            let window_x = x + 1 - wx as u16 - 7;
-
+            let window_x = x + 7 - wx as u16;
             let tile_map_row_offset = ((window_y / 8) * 32) as u16;
             let tile_map_col_offset = (window_x / 8) as u16;
 
