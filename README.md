@@ -6,9 +6,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 | Title | Screenshot |
 | --- | --- |
-| Tetris | | |
-
-| Blargs CPU Tests | | |
+| Tetris | <img src="./screenshots/TETRIS.png" width="300"> |
 
 ## Building
 
