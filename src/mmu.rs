@@ -1,6 +1,9 @@
 use crate::cart::Cart;
 use crate::joypad::Joypad;
 use std::cell::RefCell;
+use std::fs::File;
+use std::io::Read;
+use std::io::Write;
 use std::rc::Rc;
 
 pub struct MMU {
@@ -59,6 +62,24 @@ impl MMU {
             let val = self.read_byte(source + i);
             let dest = 0xFE00 as u16 + i;
             self.ram[dest as usize] = val;
+        }
+    }
+
+    pub fn savestate(&self) {
+        // dump the CPU and MMU to a file
+        // MMU: dump everything from 0x8000 to 0xFFFF
+        let mut file = File::create("savestate.mmu").unwrap();
+        file.write_all(&self.ram[0x8000..0x10000]).unwrap();
+        println!("Savestate written to savestate.mmu");
+    }
+
+    pub fn loadstate(&mut self) {
+        let mut file = File::open("savestate.mmu").unwrap();
+        let mut buffer = vec![0; 0x10000 - 0x8000];
+        file.read_exact(&mut buffer).unwrap();
+
+        for (i, &byte) in buffer.iter().enumerate() {
+            self.ram[0x8000 + i] = byte;
         }
     }
 }

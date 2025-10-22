@@ -16,6 +16,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - PPU background rendering is more accurate and window/object rendering has been added
 - Joypad inputs
 - Memory banking
+- Savestates (F1/F2)
 
 ## Out of Scope:
 

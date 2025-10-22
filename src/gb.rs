@@ -26,7 +26,12 @@ impl GB {
         let mmu = Rc::new(RefCell::new(MMU::new(Rc::clone(&cart), Rc::clone(&joypad))));
         let cpu = Rc::new(RefCell::new(CPU::new(Rc::clone(&mmu))));
         let ppu = Rc::new(RefCell::new(PPU::new(Rc::clone(&mmu), Rc::clone(&cpu))));
-        let renderer = Renderer::new(Rc::clone(&ppu), Rc::clone(&joypad), Rc::clone(&cart));
+        let renderer = Renderer::new(
+            Rc::clone(&ppu),
+            Rc::clone(&joypad),
+            Rc::clone(&cart),
+            Rc::clone(&mmu),
+        );
 
         return GB {
             cpu: cpu,

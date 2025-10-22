@@ -2,6 +2,7 @@ extern crate minifb;
 
 use crate::cart::Cart;
 use crate::joypad::{Joypad, JoypadButton};
+use crate::mmu::MMU;
 use crate::ppu::PPU;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,6 +16,7 @@ pub struct Renderer {
     pub ppu: Rc<RefCell<PPU>>,
     pub joypad: Rc<RefCell<Joypad>>,
     pub cart: Rc<RefCell<Cart>>,
+    pub mmu: Rc<RefCell<MMU>>,
 }
 
 impl Renderer {
@@ -22,6 +24,7 @@ impl Renderer {
         ppu: Rc<RefCell<PPU>>,
         joypad: Rc<RefCell<Joypad>>,
         cart: Rc<RefCell<Cart>>,
+        mmu: Rc<RefCell<MMU>>,
     ) -> Renderer {
         let raw_title = cart.borrow().title.clone();
         // Remove any NUL bytes (unsafe for C strings) by truncating at the first NUL.
@@ -56,6 +59,7 @@ impl Renderer {
             ppu,
             joypad,
             cart,
+            mmu,
         }
     }
 
@@ -86,6 +90,14 @@ impl Renderer {
             .unwrap_or_else(|e| {
                 panic!("Failed to update window: {}", e);
             });
+
+        // Savestate
+
+        if (self.window.is_key_down(Key::F1)) {
+            self.mmu.borrow().savestate();
+        } else if (self.window.is_key_down(Key::F2)) {
+            self.mmu.borrow_mut().loadstate();
+        }
     }
 
     fn handle_input(&mut self) {
