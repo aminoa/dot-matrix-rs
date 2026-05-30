@@ -73,11 +73,10 @@ pub struct CPU {
 
     pub div_cycles: u32,
     pub tima_cycles: u32,
-    pub mmu: Rc<RefCell<MMU>>,
 }
 
 impl CPU {
-    pub fn new(mmu: Rc<RefCell<MMU>>) -> CPU {
+    pub fn new() -> CPU {
         return CPU {
             a: 0x01,
             f: 0xB0,
@@ -97,7 +96,6 @@ impl CPU {
 
             div_cycles: 0,
             tima_cycles: 0,
-            mmu: mmu,
         };
     }
 

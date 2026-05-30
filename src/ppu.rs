@@ -8,8 +8,6 @@ use std::rc::Rc;
 use std::thread::JoinHandle;
 
 pub struct PPU {
-    pub cpu: Rc<RefCell<CPU>>,
-    pub mmu: Rc<RefCell<MMU>>,
     pub framebuffer: [u8; 144 * 160],
     pub current_mode: PPUMode,
     pub current_cycles: u32,
@@ -72,12 +70,10 @@ pub const COLOR_DARK_GRAY: u8 = 0x55;
 pub const COLOR_BLACK: u8 = 0x00;
 
 impl PPU {
-    pub fn new(mmu: Rc<RefCell<MMU>>, cpu: Rc<RefCell<CPU>>) -> PPU {
+    pub fn new() -> PPU {
         let framebuffer = [0xFFu8; 144 * 160];
 
         PPU {
-            cpu: cpu,
-            mmu: mmu,
             framebuffer: framebuffer,
             current_mode: PPUMode::OAM,
             current_cycles: 0,
@@ -300,8 +296,8 @@ impl PPU {
 
             let window_y = scanline - wy;
             let window_x = x + 7 - wx as u16;
-            let tile_map_row_offset = ((window_y / 8) * 32) as u16;
-            let tile_map_col_offset = (window_x / 8) as u16;
+            let tile_map_row_offset = ((window_y as u16 / 8) * 32) as u16;
+            let tile_map_col_offset = (window_x as u16 / 8) as u16;
 
             let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
             let tile_index = self.mmu.borrow().read_byte(tile_map_base + tile_map_offset);

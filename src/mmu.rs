@@ -8,20 +8,14 @@ use std::rc::Rc;
 
 pub struct MMU {
     pub ram: Vec<u8>,
-    pub cart: Rc<RefCell<Cart>>,
-    pub joypad: Rc<RefCell<Joypad>>,
 }
 
 impl MMU {
-    pub fn new(cart: Rc<RefCell<Cart>>, joypad: Rc<RefCell<Joypad>>) -> MMU {
+    pub fn new() -> MMU {
         let mut ram = vec![0; 0x10000];
         ram[0xFF00] = 0xCF; // Initialize joypad register with default value (all buttons released)
 
-        return MMU {
-            ram: ram,
-            cart: cart,
-            joypad: joypad,
-        };
+        return MMU { ram: ram };
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {

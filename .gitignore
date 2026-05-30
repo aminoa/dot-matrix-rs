@@ -1,4 +1,5 @@
 .vscode
+.claude
 .DS_Store
 /target
 utilities
