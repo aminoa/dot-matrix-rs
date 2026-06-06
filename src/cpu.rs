@@ -1,7 +1,7 @@
+use crate::cart::Cart;
 use crate::consts::{CB_OPCODES, OPCODES};
+use crate::joypad::Joypad;
 use crate::mmu::MMU;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 pub const CPU_CLOCK_SPEED: u32 = 4_194_304;
 pub const DIVIDER_CLOCK_SPEED: u32 = 16_384;
@@ -116,21 +116,21 @@ impl CPU {
     register_access!(get_de, set_de, d, e);
     register_access!(get_hl, set_hl, h, l);
 
-    pub fn update_tima(&mut self, instruction_cycles: u32) {
+    pub fn update_tima(
+        &mut self,
+        instruction_cycles: u32,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) {
         // First Timer: TIMA: incremented at frequency specified by TAC register
         // TAC: TIMA increment rate and timer enabled
         // tima_cycles tracks number of cycles to handle incrementing TIMA
 
-        let tima = self
-            .mmu
-            .borrow()
-            .read_byte(TimerSource::TimerCounter as u16);
-        let tma = self.mmu.borrow().read_byte(TimerSource::TimerModulo as u16);
+        let tima = mmu.read_byte(TimerSource::TimerCounter as u16, cart, joypad);
+        let tma = mmu.read_byte(TimerSource::TimerModulo as u16, cart, joypad);
 
-        let tac = self
-            .mmu
-            .borrow()
-            .read_byte(TimerSource::TimerControl as u16);
+        let tac = mmu.read_byte(TimerSource::TimerControl as u16, cart, joypad);
         let clock_select = tac & 0b00000011;
         let clock_freq = match clock_select {
             0b00 => 4096,
@@ -153,14 +153,10 @@ impl CPU {
                 // Request interrupt if TIMA overflows
                 if new_tima == 0 {
                     // Reset TIMA to TMA value
-                    self.mmu
-                        .borrow_mut()
-                        .write_byte(TimerSource::TimerCounter as u16, tma);
-                    self.request_interrupt(InterruptBit::Timer);
+                    mmu.write_byte(TimerSource::TimerCounter as u16, tma, cart, joypad);
+                    self.request_interrupt(InterruptBit::Timer, mmu, cart, joypad);
                 } else {
-                    self.mmu
-                        .borrow_mut()
-                        .write_byte(TimerSource::TimerCounter as u16, new_tima);
+                    mmu.write_byte(TimerSource::TimerCounter as u16, new_tima, cart, joypad);
                 }
             } else {
                 self.tima_cycles += instruction_cycles;
@@ -168,45 +164,81 @@ impl CPU {
         }
     }
 
-    pub fn update_div(&mut self, instruction_cycles: u32) {
+    pub fn update_div(
+        &mut self,
+        instruction_cycles: u32,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) {
         // Second Timer: DIV: incremented at 16384Hz
         // 4.194304 MHz / 16384 Hz = 256 T cycles/64 M Cycles
 
-        let mut div = self
-            .mmu
-            .borrow()
-            .read_byte(TimerSource::DividerRegister as u16);
+        let mut div = mmu.read_byte(TimerSource::DividerRegister as u16, cart, joypad);
         self.div_cycles = self.div_cycles.wrapping_add(instruction_cycles);
         if self.div_cycles >= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED {
             div = div.wrapping_add(1);
             self.div_cycles -= CPU_CLOCK_SPEED / DIVIDER_CLOCK_SPEED;
         }
-        self.mmu
-            .borrow_mut()
-            .write_byte(TimerSource::DividerRegister as u16, div);
+        mmu.write_byte(TimerSource::DividerRegister as u16, div, cart, joypad);
     }
 
-    pub fn update_timers(&mut self, instruction_cycles: u32) {
-        self.update_tima(instruction_cycles);
-        self.update_div(instruction_cycles);
+    pub fn update_timers(
+        &mut self,
+        instruction_cycles: u32,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) {
+        self.update_tima(instruction_cycles, mmu, cart, joypad);
+        self.update_div(instruction_cycles, mmu, cart, joypad);
     }
 
-    pub fn check_interrupts(&mut self) {
-        let interrupt_flag = self
-            .mmu
-            .borrow()
-            .read_byte(InterruptSource::InterruptFlag as u16);
-        let interrupt_enable = self
-            .mmu
-            .borrow()
-            .read_byte(InterruptSource::InterruptEnable as u16);
+    pub fn check_interrupts(&mut self, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad) {
+        let interrupt_flag = mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad);
+        let interrupt_enable = mmu.read_byte(InterruptSource::InterruptEnable as u16, cart, joypad);
 
         if self.ime && (interrupt_flag & interrupt_enable) != 0 {
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::VBlank);
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::STAT);
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Timer);
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Serial);
-            self.handle_interrupt(interrupt_flag, interrupt_enable, InterruptBit::Joypad);
+            self.handle_interrupt(
+                interrupt_flag,
+                interrupt_enable,
+                InterruptBit::VBlank,
+                mmu,
+                cart,
+                joypad,
+            );
+            self.handle_interrupt(
+                interrupt_flag,
+                interrupt_enable,
+                InterruptBit::STAT,
+                mmu,
+                cart,
+                joypad,
+            );
+            self.handle_interrupt(
+                interrupt_flag,
+                interrupt_enable,
+                InterruptBit::Timer,
+                mmu,
+                cart,
+                joypad,
+            );
+            self.handle_interrupt(
+                interrupt_flag,
+                interrupt_enable,
+                InterruptBit::Serial,
+                mmu,
+                cart,
+                joypad,
+            );
+            self.handle_interrupt(
+                interrupt_flag,
+                interrupt_enable,
+                InterruptBit::Joypad,
+                mmu,
+                cart,
+                joypad,
+            );
             self.halted = false;
         }
     }
@@ -216,16 +248,22 @@ impl CPU {
         interrupt_flag: u8,
         interrupt_enable: u8,
         interrupt_bit: InterruptBit,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
     ) {
         if self.ime && (interrupt_flag & interrupt_enable & (1 << interrupt_bit as u8)) != 0 {
             self.ime = false;
 
             let new_interrupt_flag = interrupt_flag & !(1 << interrupt_bit as u8);
-            self.mmu
-                .borrow_mut()
-                .write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
+            mmu.write_byte(
+                InterruptSource::InterruptFlag as u16,
+                new_interrupt_flag,
+                cart,
+                joypad,
+            );
 
-            self.push(self.pc);
+            self.push(self.pc, mmu, cart, joypad);
             match interrupt_bit {
                 InterruptBit::VBlank => self.pc = InterruptSource::VBlank as u16,
                 InterruptBit::STAT => self.pc = InterruptSource::STAT as u16,
@@ -236,26 +274,32 @@ impl CPU {
         }
     }
 
-    pub fn request_interrupt(&mut self, interrupt_bit: InterruptBit) {
-        let interrupt_flag = self
-            .mmu
-            .borrow()
-            .read_byte(InterruptSource::InterruptFlag as u16);
+    pub fn request_interrupt(
+        &mut self,
+        interrupt_bit: InterruptBit,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) {
+        let interrupt_flag = mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad);
         let new_interrupt_flag = interrupt_flag | (1 << interrupt_bit as u8);
-        self.mmu
-            .borrow_mut()
-            .write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag);
+        mmu.write_byte(
+            InterruptSource::InterruptFlag as u16,
+            new_interrupt_flag,
+            cart,
+            joypad,
+        );
     }
 
-    pub fn pop(&mut self) -> u16 {
-        let val = self.mmu.borrow().read_short(self.sp);
+    pub fn pop(&mut self, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad) -> u16 {
+        let val = mmu.read_short(self.sp, cart, joypad);
         self.sp = self.sp.wrapping_add(2);
         return val;
     }
 
-    pub fn push(&mut self, value: u16) {
+    pub fn push(&mut self, value: u16, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad) {
         self.sp = self.sp.wrapping_sub(2);
-        self.mmu.borrow_mut().write_short(self.sp, value);
+        mmu.write_short(self.sp, value, cart, joypad);
     }
 
     pub fn inc(&mut self, reg: u8) -> u8 {
@@ -597,10 +641,16 @@ impl CPU {
         self.set_flag(FlagRegister::HalfCarry, true);
     }
 
-    pub fn execute(&mut self, opcode: u8) -> u8 {
+    pub fn execute(
+        &mut self,
+        opcode: u8,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) -> u8 {
         if self.halted {
-            let interrupt_flag = self.mmu.borrow().read_byte(0xFF0F);
-            let interrupt_enable = self.mmu.borrow().read_byte(0xFFFF);
+            let interrupt_flag = mmu.read_byte(0xFF0F, cart, joypad);
+            let interrupt_enable = mmu.read_byte(0xFFFF, cart, joypad);
 
             if interrupt_flag & interrupt_enable != 0 {
                 self.halted = false;
@@ -608,8 +658,8 @@ impl CPU {
             return 4;
         }
 
-        let arg_u8: u8 = self.mmu.borrow().read_byte(self.pc + 1);
-        let arg_u16: u16 = self.mmu.borrow().read_short(self.pc + 1);
+        let arg_u8: u8 = mmu.read_byte(self.pc + 1, cart, joypad);
+        let arg_u16: u16 = mmu.read_short(self.pc + 1, cart, joypad);
 
         if opcode == 0xCB {
             self.pc += CB_OPCODES[arg_u8 as usize].bytes as u16;
@@ -620,7 +670,7 @@ impl CPU {
         match opcode {
             // 8 bit load instructions
             0x02 => {
-                self.mmu.borrow_mut().write_byte(self.get_bc(), self.a);
+                mmu.write_byte(self.get_bc(), self.a, cart, joypad);
                 8
             }
             0x06 => {
@@ -628,7 +678,7 @@ impl CPU {
                 8
             }
             0x0A => {
-                self.a = self.mmu.borrow().read_byte(self.get_bc());
+                self.a = mmu.read_byte(self.get_bc(), cart, joypad);
                 8
             }
             0x0E => {
@@ -636,7 +686,7 @@ impl CPU {
                 8
             }
             0x12 => {
-                self.mmu.borrow_mut().write_byte(self.get_de(), self.a);
+                mmu.write_byte(self.get_de(), self.a, cart, joypad);
                 8
             }
             0x16 => {
@@ -644,7 +694,7 @@ impl CPU {
                 8
             }
             0x1A => {
-                self.a = self.mmu.borrow().read_byte(self.get_de());
+                self.a = mmu.read_byte(self.get_de(), cart, joypad);
                 8
             }
             0x1E => {
@@ -652,7 +702,7 @@ impl CPU {
                 8
             }
             0x22 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
+                mmu.write_byte(self.get_hl(), self.a, cart, joypad);
                 self.set_hl(self.get_hl().wrapping_add(1));
                 8
             }
@@ -661,7 +711,7 @@ impl CPU {
                 8
             }
             0x2A => {
-                self.a = self.mmu.borrow().read_byte(self.get_hl());
+                self.a = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.set_hl(self.get_hl().wrapping_add(1));
                 8
             }
@@ -670,16 +720,16 @@ impl CPU {
                 8
             }
             0x32 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
+                mmu.write_byte(self.get_hl(), self.a, cart, joypad);
                 self.set_hl(self.get_hl().wrapping_sub(1));
                 8
             }
             0x36 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), arg_u8);
+                mmu.write_byte(self.get_hl(), arg_u8, cart, joypad);
                 12
             }
             0x3A => {
-                self.a = self.mmu.borrow().read_byte(self.get_hl());
+                self.a = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.set_hl(self.get_hl().wrapping_sub(1));
                 8
             }
@@ -713,7 +763,7 @@ impl CPU {
                 4
             }
             0x46 => {
-                self.b = self.mmu.borrow().read_byte(self.get_hl());
+                self.b = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x47 => {
@@ -745,7 +795,7 @@ impl CPU {
                 4
             }
             0x4E => {
-                self.c = self.mmu.borrow().read_byte(self.get_hl());
+                self.c = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x4F => {
@@ -777,7 +827,7 @@ impl CPU {
                 4
             }
             0x56 => {
-                self.d = self.mmu.borrow().read_byte(self.get_hl());
+                self.d = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x57 => {
@@ -809,7 +859,7 @@ impl CPU {
                 4
             }
             0x5E => {
-                self.e = self.mmu.borrow().read_byte(self.get_hl());
+                self.e = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x5F => {
@@ -841,7 +891,7 @@ impl CPU {
                 4
             }
             0x66 => {
-                self.h = self.mmu.borrow().read_byte(self.get_hl());
+                self.h = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x67 => {
@@ -873,7 +923,7 @@ impl CPU {
                 4
             }
             0x6E => {
-                self.l = self.mmu.borrow().read_byte(self.get_hl());
+                self.l = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x6F => {
@@ -881,31 +931,31 @@ impl CPU {
                 4
             }
             0x70 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.b);
+                mmu.write_byte(self.get_hl(), self.b, cart, joypad);
                 8
             }
             0x71 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.c);
+                mmu.write_byte(self.get_hl(), self.c, cart, joypad);
                 8
             }
             0x72 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.d);
+                mmu.write_byte(self.get_hl(), self.d, cart, joypad);
                 8
             }
             0x73 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.e);
+                mmu.write_byte(self.get_hl(), self.e, cart, joypad);
                 8
             }
             0x74 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.h);
+                mmu.write_byte(self.get_hl(), self.h, cart, joypad);
                 8
             }
             0x75 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.l);
+                mmu.write_byte(self.get_hl(), self.l, cart, joypad);
                 8
             }
             0x77 => {
-                self.mmu.borrow_mut().write_byte(self.get_hl(), self.a);
+                mmu.write_byte(self.get_hl(), self.a, cart, joypad);
                 8
             }
             0x78 => {
@@ -933,7 +983,7 @@ impl CPU {
                 4
             }
             0x7E => {
-                self.a = self.mmu.borrow().read_byte(self.get_hl());
+                self.a = mmu.read_byte(self.get_hl(), cart, joypad);
                 8
             }
             0x7F => {
@@ -942,32 +992,28 @@ impl CPU {
             }
 
             0xE0 => {
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(0xFF00 + arg_u8 as u16, self.a);
+                mmu.write_byte(0xFF00 + arg_u8 as u16, self.a, cart, joypad);
                 12
             }
             0xE2 => {
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(0xFF00 + self.c as u16, self.a);
+                mmu.write_byte(0xFF00 + self.c as u16, self.a, cart, joypad);
                 8
             }
 
             0xEA => {
-                self.mmu.borrow_mut().write_byte(arg_u16, self.a);
+                mmu.write_byte(arg_u16, self.a, cart, joypad);
                 12
             }
             0xF0 => {
-                self.a = self.mmu.borrow().read_byte(0xFF00 + arg_u8 as u16);
+                self.a = mmu.read_byte(0xFF00 + arg_u8 as u16, cart, joypad);
                 8
             }
             0xF2 => {
-                self.a = self.mmu.borrow().read_byte(0xFF00 + self.c as u16);
+                self.a = mmu.read_byte(0xFF00 + self.c as u16, cart, joypad);
                 8
             }
             0xFA => {
-                self.a = self.mmu.borrow().read_byte(arg_u16);
+                self.a = mmu.read_byte(arg_u16, cart, joypad);
                 8
             }
 
@@ -977,7 +1023,7 @@ impl CPU {
                 12
             }
             0x08 => {
-                self.mmu.borrow_mut().write_short(arg_u16, self.sp);
+                mmu.write_short(arg_u16, self.sp, cart, joypad);
                 20
             }
             0x11 => {
@@ -993,39 +1039,39 @@ impl CPU {
                 12
             }
             0xC1 => {
-                let temp = self.pop();
+                let temp = self.pop(mmu, cart, joypad);
                 self.set_bc(temp);
                 12
             }
             0xC5 => {
-                self.push(self.get_bc());
+                self.push(self.get_bc(), mmu, cart, joypad);
                 16
             }
             0xD1 => {
-                let temp = self.pop();
+                let temp = self.pop(mmu, cart, joypad);
                 self.set_de(temp);
                 12
             }
             0xD5 => {
-                self.push(self.get_de());
+                self.push(self.get_de(), mmu, cart, joypad);
                 16
             }
             0xE1 => {
-                let temp = self.pop();
+                let temp = self.pop(mmu, cart, joypad);
                 self.set_hl(temp);
                 12
             }
             0xE5 => {
-                self.push(self.get_hl());
+                self.push(self.get_hl(), mmu, cart, joypad);
                 16
             }
             0xF1 => {
-                let temp = self.pop() & 0xFFF0;
+                let temp = self.pop(mmu, cart, joypad) & 0xFFF0;
                 self.set_af(temp);
                 12
             }
             0xF5 => {
-                self.push(self.get_af());
+                self.push(self.get_af(), mmu, cart, joypad);
                 16
             }
             0xF8 => {
@@ -1099,15 +1145,15 @@ impl CPU {
                 4
             }
             0x34 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let temp = self.inc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
+                mmu.write_byte(self.get_hl(), temp, cart, joypad);
                 12
             }
             0x35 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let temp = self.dec(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), temp);
+                mmu.write_byte(self.get_hl(), temp, cart, joypad);
                 12
             }
             0x3C => {
@@ -1144,7 +1190,7 @@ impl CPU {
                 4
             }
             0x86 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.add_a(temp);
                 8
             }
@@ -1177,7 +1223,7 @@ impl CPU {
                 4
             }
             0x8E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.adc(temp);
                 8
             }
@@ -1210,7 +1256,7 @@ impl CPU {
                 4
             }
             0x96 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.sub(temp);
                 8
             }
@@ -1243,7 +1289,7 @@ impl CPU {
                 4
             }
             0x9E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.sbc(temp);
                 8
             }
@@ -1276,7 +1322,7 @@ impl CPU {
                 4
             }
             0xA6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.and(temp);
                 8
             }
@@ -1309,7 +1355,7 @@ impl CPU {
                 4
             }
             0xAE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.xor(temp);
                 8
             }
@@ -1342,7 +1388,7 @@ impl CPU {
                 4
             }
             0xB6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.or(temp);
                 8
             }
@@ -1375,7 +1421,7 @@ impl CPU {
                 4
             }
             0xBE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.cp(temp);
                 8
             }
@@ -1489,7 +1535,7 @@ impl CPU {
                 4
             }
             0xCB => {
-                self.execute_cb(arg_u8);
+                self.execute_cb(arg_u8, mmu, cart, joypad);
                 4
             }
 
@@ -1571,7 +1617,7 @@ impl CPU {
             }
             0xC0 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
-                    self.pc = self.pop();
+                    self.pc = self.pop(mmu, cart, joypad);
                     20
                 } else {
                     8
@@ -1591,7 +1637,7 @@ impl CPU {
             }
             0xC4 => {
                 if self.get_flag(FlagRegister::Zero) == 0 {
-                    self.push(self.pc);
+                    self.push(self.pc, mmu, cart, joypad);
                     self.pc = arg_u16;
                     24
                 } else {
@@ -1599,20 +1645,20 @@ impl CPU {
                 }
             }
             0xC7 => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x00;
                 16
             }
             0xC8 => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
-                    self.pc = self.pop();
+                    self.pc = self.pop(mmu, cart, joypad);
                     20
                 } else {
                     8
                 }
             }
             0xC9 => {
-                self.pc = self.pop();
+                self.pc = self.pop(mmu, cart, joypad);
                 16
             }
             0xCA => {
@@ -1625,7 +1671,7 @@ impl CPU {
             }
             0xCC => {
                 if self.get_flag(FlagRegister::Zero) == 1 {
-                    self.push(self.pc);
+                    self.push(self.pc, mmu, cart, joypad);
                     self.pc = arg_u16;
                     24
                 } else {
@@ -1633,18 +1679,18 @@ impl CPU {
                 }
             }
             0xCD => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = arg_u16;
                 24
             }
             0xCF => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x08;
                 16
             }
             0xD0 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
-                    self.pc = self.pop();
+                    self.pc = self.pop(mmu, cart, joypad);
                     12
                 } else {
                     8
@@ -1660,7 +1706,7 @@ impl CPU {
             }
             0xD4 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
-                    self.push(self.pc);
+                    self.push(self.pc, mmu, cart, joypad);
                     self.pc = arg_u16;
                     24
                 } else {
@@ -1668,20 +1714,20 @@ impl CPU {
                 }
             }
             0xD7 => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x10;
                 16
             }
             0xD8 => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
-                    self.pc = self.pop();
+                    self.pc = self.pop(mmu, cart, joypad);
                     20
                 } else {
                     8
                 }
             }
             0xD9 => {
-                self.pc = self.pop();
+                self.pc = self.pop(mmu, cart, joypad);
                 self.ime = true;
                 16
             }
@@ -1696,7 +1742,7 @@ impl CPU {
             }
             0xDC => {
                 if self.get_flag(FlagRegister::Carry) == 1 {
-                    self.push(self.pc);
+                    self.push(self.pc, mmu, cart, joypad);
                     self.pc = arg_u16;
                     24
                 } else {
@@ -1704,12 +1750,12 @@ impl CPU {
                 }
             }
             0xDF => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x18;
                 16
             }
             0xE7 => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x20;
                 16
             }
@@ -1718,17 +1764,17 @@ impl CPU {
                 4
             }
             0xEF => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x28;
                 16
             }
             0xF7 => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x30;
                 16
             }
             0xFF => {
-                self.push(self.pc);
+                self.push(self.pc, mmu, cart, joypad);
                 self.pc = 0x38;
                 16
             }
@@ -1736,7 +1782,13 @@ impl CPU {
         }
     }
 
-    pub fn execute_cb(&mut self, opcode: u8) -> u8 {
+    pub fn execute_cb(
+        &mut self,
+        opcode: u8,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+    ) -> u8 {
         match opcode {
             0x00 => {
                 self.b = self.rlc(self.b);
@@ -1763,9 +1815,9 @@ impl CPU {
                 8
             }
             0x06 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.rlc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x07 => {
@@ -1797,9 +1849,9 @@ impl CPU {
                 8
             }
             0x0E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.rrc(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x0F => {
@@ -1831,9 +1883,9 @@ impl CPU {
                 8
             }
             0x16 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.rl(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x17 => {
@@ -1865,9 +1917,9 @@ impl CPU {
                 8
             }
             0x1E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.rr(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x1F => {
@@ -1899,9 +1951,9 @@ impl CPU {
                 8
             }
             0x26 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.sla(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x27 => {
@@ -1933,9 +1985,9 @@ impl CPU {
                 8
             }
             0x2E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.sra(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x2F => {
@@ -1967,9 +2019,9 @@ impl CPU {
                 8
             }
             0x36 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.swap(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x37 => {
@@ -2001,9 +2053,9 @@ impl CPU {
                 8
             }
             0x3E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 let result = self.srl(temp);
-                self.mmu.borrow_mut().write_byte(self.get_hl(), result);
+                mmu.write_byte(self.get_hl(), result, cart, joypad);
                 16
             }
             0x3F => {
@@ -2035,7 +2087,7 @@ impl CPU {
                 8
             }
             0x46 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(0, temp);
                 12
             }
@@ -2068,7 +2120,7 @@ impl CPU {
                 8
             }
             0x4E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(1, temp);
                 12
             }
@@ -2101,7 +2153,7 @@ impl CPU {
                 8
             }
             0x56 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(2, temp);
                 12
             }
@@ -2134,7 +2186,7 @@ impl CPU {
                 8
             }
             0x5E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(3, temp);
                 12
             }
@@ -2167,7 +2219,7 @@ impl CPU {
                 8
             }
             0x66 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(4, temp);
                 12
             }
@@ -2200,7 +2252,7 @@ impl CPU {
                 8
             }
             0x6E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(5, temp);
                 12
             }
@@ -2233,7 +2285,7 @@ impl CPU {
                 8
             }
             0x76 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(6, temp);
                 12
             }
@@ -2266,7 +2318,7 @@ impl CPU {
                 8
             }
             0x7E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
                 self.bit(7, temp);
                 12
             }
@@ -2299,10 +2351,8 @@ impl CPU {
                 8
             }
             0x86 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(0, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(0, temp), cart, joypad);
                 16
             }
             0x87 => {
@@ -2334,10 +2384,8 @@ impl CPU {
                 8
             }
             0x8E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(1, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(1, temp), cart, joypad);
                 16
             }
             0x8F => {
@@ -2369,10 +2417,8 @@ impl CPU {
                 8
             }
             0x96 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(2, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(2, temp), cart, joypad);
                 16
             }
             0x97 => {
@@ -2404,10 +2450,8 @@ impl CPU {
                 8
             }
             0x9E => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(3, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(3, temp), cart, joypad);
                 16
             }
             0x9F => {
@@ -2439,10 +2483,8 @@ impl CPU {
                 8
             }
             0xA6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(4, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(4, temp), cart, joypad);
                 16
             }
             0xA7 => {
@@ -2474,10 +2516,8 @@ impl CPU {
                 8
             }
             0xAE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(5, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(5, temp), cart, joypad);
                 16
             }
             0xAF => {
@@ -2509,10 +2549,8 @@ impl CPU {
                 8
             }
             0xB6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(6, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(6, temp), cart, joypad);
                 16
             }
             0xB7 => {
@@ -2544,10 +2582,8 @@ impl CPU {
                 8
             }
             0xBE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.res(7, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.res(7, temp), cart, joypad);
                 16
             }
             0xBF => {
@@ -2579,10 +2615,8 @@ impl CPU {
                 8
             }
             0xC6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(0, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(0, temp), cart, joypad);
                 16
             }
             0xC7 => {
@@ -2614,10 +2648,8 @@ impl CPU {
                 8
             }
             0xCE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(1, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(1, temp), cart, joypad);
                 16
             }
             0xCF => {
@@ -2649,10 +2681,8 @@ impl CPU {
                 8
             }
             0xD6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(2, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(2, temp), cart, joypad);
                 16
             }
             0xD7 => {
@@ -2684,10 +2714,8 @@ impl CPU {
                 8
             }
             0xDE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(3, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(3, temp), cart, joypad);
                 16
             }
             0xDF => {
@@ -2719,10 +2747,8 @@ impl CPU {
                 8
             }
             0xE6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(4, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(4, temp), cart, joypad);
                 16
             }
             0xE7 => {
@@ -2754,10 +2780,8 @@ impl CPU {
                 8
             }
             0xEE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(5, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(5, temp), cart, joypad);
                 16
             }
             0xEF => {
@@ -2789,10 +2813,8 @@ impl CPU {
                 8
             }
             0xF6 => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(6, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(6, temp), cart, joypad);
                 16
             }
             0xF7 => {
@@ -2824,10 +2846,8 @@ impl CPU {
                 8
             }
             0xFE => {
-                let temp = self.mmu.borrow().read_byte(self.get_hl());
-                self.mmu
-                    .borrow_mut()
-                    .write_byte(self.get_hl(), self.set(7, temp));
+                let temp = mmu.read_byte(self.get_hl(), cart, joypad);
+                mmu.write_byte(self.get_hl(), self.set(7, temp), cart, joypad);
                 16
             }
             0xFF => {

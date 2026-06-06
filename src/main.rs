@@ -22,37 +22,44 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let mut gb = GB::new(cli.rom);
-    let renderer = Renderer::new(&gb.ppu, &gb.joypad, &gb.cart, &gb.mmu);
-    run(renderer);
+    let gb = GB::new(cli.rom);
+    let renderer = Renderer::new(gb.cart.title.clone());
+    run(gb, renderer);
 }
 
-pub fn run(renderer: Renderer) {
+pub fn run(mut gb: GB, mut renderer: Renderer) {
     loop {
         let mut current_cycles: u32 = 0;
         while current_cycles < CYCLES_PER_FRAME {
-            let instruction = renderer
-                .mmu
-                .borrow()
-                .read_byte(renderer.cpu.borrow().pc.clone());
+            let instruction = gb.mmu.read_byte(gb.cpu.pc.clone(), &gb.cart, &gb.joypad);
 
-            let instruction_cycles = renderer.cpu.borrow_mut().execute(instruction);
-            renderer.cpu.borrow_mut().check_interrupts();
-            renderer
-                .cpu
-                .borrow_mut()
-                .update_timers(instruction_cycles as u32);
-            renderer.ppu.borrow_mut().update(instruction_cycles as u32);
+            let instruction_cycles =
+                gb.cpu
+                    .execute(instruction, &mut gb.mmu, &mut gb.cart, &mut gb.joypad);
+            gb.cpu
+                .check_interrupts(&mut gb.mmu, &mut gb.cart, &mut gb.joypad);
+            gb.cpu.update_timers(
+                instruction_cycles as u32,
+                &mut gb.mmu,
+                &mut gb.cart,
+                &mut gb.joypad,
+            );
+            gb.ppu.update(
+                instruction_cycles as u32,
+                &mut gb.mmu,
+                &mut gb.cpu,
+                &mut gb.cart,
+                &mut gb.joypad,
+            );
 
             current_cycles += instruction_cycles as u32;
 
-            if renderer.mmu.borrow().read_byte(0xFF02) == 0x81 {
-                print!("{}", renderer.mmu.borrow().read_byte(0xFF01) as char);
-                renderer.mmu.borrow_mut().write_byte(0xFF02, 0);
+            if gb.mmu.read_byte(0xFF02, &gb.cart, &gb.joypad) == 0x81 {
+                print!("{}", gb.mmu.read_byte(0xFF01, &gb.cart, &gb.joypad) as char);
+                gb.mmu.write_byte(0xFF02, 0, &mut gb.cart, &mut gb.joypad);
             }
         }
-
-        current_cycles -= CYCLES_PER_FRAME;
-        renderer.update();
+        // current_cycles -= CYCLES_PER_FRAME;
+        renderer.update(&mut gb.mmu, &mut gb.ppu, &mut gb.joypad);
     }
 }

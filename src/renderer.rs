@@ -13,24 +13,14 @@ use minifb::{Key, Window, WindowOptions};
 pub struct Renderer {
     pub window: Window,
     pub buffer: Vec<u32>,
-    pub ppu: Rc<RefCell<PPU>>,
-    pub joypad: Rc<RefCell<Joypad>>,
-    pub cart: Rc<RefCell<Cart>>,
-    pub mmu: Rc<RefCell<MMU>>,
 }
 
 impl Renderer {
-    pub fn new(
-        ppu: Rc<RefCell<PPU>>,
-        joypad: Rc<RefCell<Joypad>>,
-        cart: Rc<RefCell<Cart>>,
-        mmu: Rc<RefCell<MMU>>,
-    ) -> Renderer {
-        let raw_title = cart.borrow().title.clone();
+    pub fn new(rom_title: String) -> Renderer {
         // Remove any NUL bytes (unsafe for C strings) by truncating at the first NUL.
-        let title = match raw_title.find('\0') {
-            Some(idx) => raw_title[..idx].to_string(),
-            None => raw_title,
+        let title = match rom_title.find('\0') {
+            Some(idx) => rom_title[..idx].to_string(),
+            None => rom_title,
         };
 
         let mut window = Window::new(
@@ -53,19 +43,12 @@ impl Renderer {
         // Create a buffer to hold the pixel data (RGB format for minifb)
         let buffer = vec![0xFFFFFF; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize];
 
-        Renderer {
-            window,
-            buffer,
-            ppu,
-            joypad,
-            cart,
-            mmu,
-        }
+        Renderer { window, buffer }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, mmu: &mut MMU, ppu: &mut PPU, joypad: &mut Joypad) {
         // Get the framebuffer from the PPU
-        let framebuffer = self.ppu.borrow().framebuffer;
+        let framebuffer = ppu.framebuffer;
 
         // Convert the grayscale framebuffer to RGBA format for minifb
         // minifb expects 0xRRGGBB format (32-bit unsigned integers)
@@ -76,7 +59,7 @@ impl Renderer {
                 (gray_value as u32) << 16 | (gray_value as u32) << 8 | (gray_value as u32);
         }
 
-        self.handle_input();
+        self.handle_input(joypad);
 
         // Check if window should close
         if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
@@ -94,27 +77,26 @@ impl Renderer {
         // Savestate
 
         if (self.window.is_key_down(Key::F1)) {
-            self.mmu.borrow().savestate();
+            mmu.savestate();
         } else if (self.window.is_key_down(Key::F2)) {
-            self.mmu.borrow_mut().loadstate();
+            mmu.loadstate();
         }
     }
 
-    fn handle_input(&mut self) {
-        self.handle_key(Key::Up, JoypadButton::Up);
-        self.handle_key(Key::Down, JoypadButton::Down);
-        self.handle_key(Key::Left, JoypadButton::Left);
-        self.handle_key(Key::Right, JoypadButton::Right);
+    fn handle_input(&mut self, joypad: &mut Joypad) {
+        self.handle_key(joypad, Key::Up, JoypadButton::Up);
+        self.handle_key(joypad, Key::Down, JoypadButton::Down);
+        self.handle_key(joypad, Key::Left, JoypadButton::Left);
+        self.handle_key(joypad, Key::Right, JoypadButton::Right);
 
-        self.handle_key(Key::Z, JoypadButton::B);
-        self.handle_key(Key::X, JoypadButton::A);
+        self.handle_key(joypad, Key::Z, JoypadButton::B);
+        self.handle_key(joypad, Key::X, JoypadButton::A);
 
-        self.handle_key(Key::Enter, JoypadButton::Start);
-        self.handle_key(Key::Space, JoypadButton::Select);
+        self.handle_key(joypad, Key::Enter, JoypadButton::Start);
+        self.handle_key(joypad, Key::Space, JoypadButton::Select);
     }
 
-    fn handle_key(&self, key: Key, button: JoypadButton) {
-        let mut joypad = self.joypad.borrow_mut();
+    fn handle_key(&self, joypad: &mut Joypad, key: Key, button: JoypadButton) {
         if self.window.is_key_down(key) {
             joypad.press_button(button);
         } else {
