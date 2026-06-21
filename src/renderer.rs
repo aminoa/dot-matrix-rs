@@ -69,5 +69,7 @@ impl Renderer {
                 mmu.loadstate();
             }
         });
+
+        ui.ctx().request_repaint();
     }
 }
