@@ -256,12 +256,7 @@ impl CPU {
             self.ime = false;
 
             let new_interrupt_flag = interrupt_flag & !(1 << interrupt_bit as u8);
-            mmu.write_byte(
-                InterruptSource::InterruptFlag as u16,
-                new_interrupt_flag,
-                cart,
-                joypad,
-            );
+            mmu.write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag, cart, joypad);
 
             self.push(self.pc, mmu, cart, joypad);
             match interrupt_bit {
@@ -283,12 +278,7 @@ impl CPU {
     ) {
         let interrupt_flag = mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad);
         let new_interrupt_flag = interrupt_flag | (1 << interrupt_bit as u8);
-        mmu.write_byte(
-            InterruptSource::InterruptFlag as u16,
-            new_interrupt_flag,
-            cart,
-            joypad,
-        );
+        mmu.write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag, cart, joypad);
     }
 
     pub fn pop(&mut self, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad) -> u16 {
@@ -454,10 +444,7 @@ impl CPU {
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
-        self.set_flag(
-            FlagRegister::HalfCarry,
-            (self.a & 0x0F) + (value & 0x0F) > 0x0F,
-        );
+        self.set_flag(FlagRegister::HalfCarry, (self.a & 0x0F) + (value & 0x0F) > 0x0F);
         self.set_flag(FlagRegister::Carry, (self.a as u16) + (value as u16) > 0xFF);
 
         self.a = result;
@@ -471,10 +458,7 @@ impl CPU {
             FlagRegister::HalfCarry,
             (self.get_hl() & 0x0FFF) + (value & 0x0FFF) > 0x0FFF,
         );
-        self.set_flag(
-            FlagRegister::Carry,
-            (self.get_hl() as u32) + (value as u32) > 0xFFFF,
-        );
+        self.set_flag(FlagRegister::Carry, (self.get_hl() as u32) + (value as u32) > 0xFFFF);
 
         self.set_hl(result);
     }
@@ -486,10 +470,7 @@ impl CPU {
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, false);
-        self.set_flag(
-            FlagRegister::HalfCarry,
-            (self.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-        );
+        self.set_flag(FlagRegister::HalfCarry, (self.a & 0x0F) + (value & 0x0F) + carry > 0x0F);
         self.set_flag(
             FlagRegister::Carry,
             (self.a as u16) + (value as u16) + (carry as u16) > 0xFF,
@@ -516,14 +497,8 @@ impl CPU {
 
         self.set_flag(FlagRegister::Zero, false);
         self.set_flag(FlagRegister::Sub, false);
-        self.set_flag(
-            FlagRegister::HalfCarry,
-            (self.sp & 0x0F) + (value as u16 & 0x0F) > 0x0F,
-        );
-        self.set_flag(
-            FlagRegister::Carry,
-            (self.sp & 0xFF) + (value as u16 & 0xFF) > 0xFF,
-        );
+        self.set_flag(FlagRegister::HalfCarry, (self.sp & 0x0F) + (value as u16 & 0x0F) > 0x0F);
+        self.set_flag(FlagRegister::Carry, (self.sp & 0xFF) + (value as u16 & 0xFF) > 0xFF);
 
         self.sp = result;
     }
@@ -534,14 +509,8 @@ impl CPU {
 
         self.set_flag(FlagRegister::Zero, result == 0);
         self.set_flag(FlagRegister::Sub, true);
-        self.set_flag(
-            FlagRegister::HalfCarry,
-            (self.a & 0x0F) < (value & 0x0F) + carry,
-        );
-        self.set_flag(
-            FlagRegister::Carry,
-            (self.a as u16) < (value as u16) + (carry as u16),
-        );
+        self.set_flag(FlagRegister::HalfCarry, (self.a & 0x0F) < (value & 0x0F) + carry);
+        self.set_flag(FlagRegister::Carry, (self.a as u16) < (value as u16) + (carry as u16));
 
         self.a = result;
     }
@@ -624,11 +593,8 @@ impl CPU {
             should_carry = true;
         }
 
-        self.a = if subtract == 0 {
-            self.a.wrapping_add(offset)
-        } else {
-            self.a.wrapping_sub(offset)
-        };
+        self.a =
+            if subtract == 0 { self.a.wrapping_add(offset) } else { self.a.wrapping_sub(offset) };
 
         self.set_flag(FlagRegister::Zero, self.a == 0);
         self.set_flag(FlagRegister::HalfCarry, false);

@@ -1,106 +1,73 @@
-extern crate minifb;
-
-use crate::cart::Cart;
+use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::joypad::{Joypad, JoypadButton};
 use crate::mmu::MMU;
 use crate::ppu::PPU;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::consts::{FRAME_RATE, SCREEN_HEIGHT, SCREEN_WIDTH};
-use minifb::{Key, Window, WindowOptions};
 
 pub struct Renderer {
-    pub window: Window,
-    pub buffer: Vec<u32>,
+    texture: Option<egui::TextureHandle>,
 }
 
 impl Renderer {
-    pub fn new(rom_title: String) -> Renderer {
-        // Remove any NUL bytes (unsafe for C strings) by truncating at the first NUL.
-        let title = match rom_title.find('\0') {
-            Some(idx) => rom_title[..idx].to_string(),
-            None => rom_title,
+    pub fn new() -> Self {
+        Renderer { texture: None }
+    }
+
+    pub fn update(&mut self, ui: &mut egui::Ui, mmu: &mut MMU, ppu: &mut PPU, joypad: &mut Joypad) {
+        let pixels: Vec<egui::Color32> =
+            ppu.framebuffer.iter().map(|&pixel| egui::Color32::from_gray(pixel)).collect();
+        // map pixel bytes into GPU buffer
+        let image = egui::ColorImage::new([SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize], pixels);
+
+        // need to set NEAREST, else texture is blurry (from bilinear filtering)
+        let opts = egui::TextureOptions::NEAREST;
+
+        let tex_id = match &mut self.texture {
+            Some(handle) => {
+                handle.set(image, opts);
+                handle.id()
+            }
+            None => {
+                let handle = ui.ctx().load_texture("screen", image, opts);
+                let id = handle.id();
+                self.texture = Some(handle);
+                id
+            }
         };
 
-        let mut window = Window::new(
-            title.as_str(),
-            SCREEN_WIDTH as usize,
-            SCREEN_HEIGHT as usize,
-            WindowOptions {
-                resize: false,
-                scale: minifb::Scale::X2,
-                ..WindowOptions::default()
-            },
-        )
-        .unwrap_or_else(|e| {
-            panic!("Failed to create window: {}", e);
+        ui.centered_and_justified(|ui| {
+            ui.add(
+                // doesn't store image, but ImageSource that references existing texture
+                egui::Image::new((tex_id, egui::vec2(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32)))
+                    .texture_options(opts)
+                    .maintain_aspect_ratio(true)
+                    .shrink_to_fit(),
+            )
         });
 
-        // Limit to max refresh rate
-        window.set_target_fps(FRAME_RATE as usize);
+        ui.input(|i| {
+            for (key, button) in [
+                (egui::Key::ArrowUp, JoypadButton::Up),
+                (egui::Key::ArrowDown, JoypadButton::Down),
+                (egui::Key::ArrowLeft, JoypadButton::Left),
+                (egui::Key::ArrowRight, JoypadButton::Right),
+                (egui::Key::Z, JoypadButton::B),
+                (egui::Key::X, JoypadButton::A),
+                (egui::Key::Enter, JoypadButton::Start),
+                (egui::Key::Space, JoypadButton::Select),
+            ] {
+                if i.key_down(key) {
+                    joypad.press_button(button);
+                } else {
+                    joypad.release_button(button);
+                }
+            }
 
-        // Create a buffer to hold the pixel data (RGB format for minifb)
-        let buffer = vec![0xFFFFFF; (SCREEN_WIDTH * SCREEN_HEIGHT) as usize];
-
-        Renderer { window, buffer }
-    }
-
-    pub fn update(&mut self, mmu: &mut MMU, ppu: &mut PPU, joypad: &mut Joypad) {
-        // Get the framebuffer from the PPU
-        let framebuffer = ppu.framebuffer;
-
-        // Convert the grayscale framebuffer to RGBA format for minifb
-        // minifb expects 0xRRGGBB format (32-bit unsigned integers)
-        for i in 0..framebuffer.len() {
-            let gray_value = framebuffer[i];
-            // Convert the grayscale value to RGB (same value for R, G, B)
-            self.buffer[i] =
-                (gray_value as u32) << 16 | (gray_value as u32) << 8 | (gray_value as u32);
-        }
-
-        self.handle_input(joypad);
-
-        // Check if window should close
-        if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
-            println!("Exiting...");
-            std::process::exit(0);
-        }
-
-        // Display the framebuffer
-        self.window
-            .update_with_buffer(&self.buffer, SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize)
-            .unwrap_or_else(|e| {
-                panic!("Failed to update window: {}", e);
-            });
-
-        // Savestate
-
-        if (self.window.is_key_down(Key::F1)) {
-            mmu.savestate();
-        } else if (self.window.is_key_down(Key::F2)) {
-            mmu.loadstate();
-        }
-    }
-
-    fn handle_input(&mut self, joypad: &mut Joypad) {
-        self.handle_key(joypad, Key::Up, JoypadButton::Up);
-        self.handle_key(joypad, Key::Down, JoypadButton::Down);
-        self.handle_key(joypad, Key::Left, JoypadButton::Left);
-        self.handle_key(joypad, Key::Right, JoypadButton::Right);
-
-        self.handle_key(joypad, Key::Z, JoypadButton::B);
-        self.handle_key(joypad, Key::X, JoypadButton::A);
-
-        self.handle_key(joypad, Key::Enter, JoypadButton::Start);
-        self.handle_key(joypad, Key::Space, JoypadButton::Select);
-    }
-
-    fn handle_key(&self, joypad: &mut Joypad, key: Key, button: JoypadButton) {
-        if self.window.is_key_down(key) {
-            joypad.press_button(button);
-        } else {
-            joypad.release_button(button);
-        }
+            if i.key_pressed(egui::Key::F1) {
+                mmu.savestate();
+            }
+            if i.key_pressed(egui::Key::F2) {
+                mmu.loadstate();
+            }
+        });
     }
 }

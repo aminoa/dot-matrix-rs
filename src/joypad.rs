@@ -30,12 +30,7 @@ pub struct Joypad {
 
 impl Joypad {
     pub fn new() -> Joypad {
-        Joypad {
-            select_buttons: 0x30,
-
-            direction_buttons: 0x0F,
-            action_buttons: 0x0F,
-        }
+        Joypad { select_buttons: 0x30, direction_buttons: 0x0F, action_buttons: 0x0F }
     }
 
     pub fn press_button(&mut self, button: JoypadButton) {

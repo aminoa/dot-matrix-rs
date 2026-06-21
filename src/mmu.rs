@@ -61,7 +61,7 @@ impl MMU {
     }
 
     pub fn savestate(&self) {
-        // dump the CPU and MMU to a file
+        // dump the MMU to a file
         // MMU: dump everything from 0x8000 to 0xFFFF
         let mut file = File::create("savestate.mmu").unwrap();
         file.write_all(&self.ram[0x8000..0x10000]).unwrap();

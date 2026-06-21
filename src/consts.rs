@@ -217,7 +217,7 @@ pub const OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xD0, mnemonic: "RET", bytes: 1, cycles: &[20, 8] },
     Opcode { opcode: 0xD1, mnemonic: "POP", bytes: 1, cycles: &[12] },
     Opcode { opcode: 0xD2, mnemonic: "JP", bytes: 3, cycles: &[16, 12] },
-    Opcode { opcode: 0xD3, mnemonic: "ILLEGAL_D3", bytes: 1, cycles: &[4] }, 
+    Opcode { opcode: 0xD3, mnemonic: "ILLEGAL_D3", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xD4, mnemonic: "CALL", bytes: 3, cycles: &[24, 12] },
     Opcode { opcode: 0xD5, mnemonic: "PUSH", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xD6, mnemonic: "SUB", bytes: 2, cycles: &[8] },
@@ -225,7 +225,7 @@ pub const OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xD8, mnemonic: "RET", bytes: 1, cycles: &[20, 8] },
     Opcode { opcode: 0xD9, mnemonic: "RETI", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xDA, mnemonic: "JP", bytes: 3, cycles: &[16, 12] },
-    Opcode { opcode: 0xDB, mnemonic: "ILLEGAL_DB", bytes: 1, cycles: &[4] }, 
+    Opcode { opcode: 0xDB, mnemonic: "ILLEGAL_DB", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xDC, mnemonic: "CALL", bytes: 3, cycles: &[24, 12] },
     Opcode { opcode: 0xDD, mnemonic: "ILLEGAL_DD", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xDE, mnemonic: "SBC", bytes: 2, cycles: &[8] },
@@ -233,24 +233,24 @@ pub const OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xE0, mnemonic: "LDH", bytes: 2, cycles: &[12] },
     Opcode { opcode: 0xE1, mnemonic: "POP", bytes: 1, cycles: &[12] },
     Opcode { opcode: 0xE2, mnemonic: "LDH", bytes: 1, cycles: &[8] },
-    Opcode { opcode: 0xE3, mnemonic: "ILLEGAL_E3", bytes: 1, cycles: &[4] }, 
-    Opcode { opcode: 0xE4, mnemonic: "ILLEGAL_E4", bytes: 1, cycles: &[4] }, 
+    Opcode { opcode: 0xE3, mnemonic: "ILLEGAL_E3", bytes: 1, cycles: &[4] },
+    Opcode { opcode: 0xE4, mnemonic: "ILLEGAL_E4", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xE5, mnemonic: "PUSH", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xE6, mnemonic: "AND", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xE7, mnemonic: "RST", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xE8, mnemonic: "ADD SP", bytes: 2, cycles: &[16] },
     Opcode { opcode: 0xE9, mnemonic: "JP", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xEA, mnemonic: "LD", bytes: 3, cycles: &[16] },
-    Opcode { opcode: 0xEB, mnemonic: "ILLEGAL_EB", bytes: 1, cycles: &[4] }, 
-    Opcode { opcode: 0xEC, mnemonic: "ILLEGAL_EC", bytes: 1, cycles: &[4] }, 
-    Opcode { opcode: 0xED, mnemonic: "ILLEGAL_ED", bytes: 1, cycles: &[4] }, 
+    Opcode { opcode: 0xEB, mnemonic: "ILLEGAL_EB", bytes: 1, cycles: &[4] },
+    Opcode { opcode: 0xEC, mnemonic: "ILLEGAL_EC", bytes: 1, cycles: &[4] },
+    Opcode { opcode: 0xED, mnemonic: "ILLEGAL_ED", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xEE, mnemonic: "XOR", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xEF, mnemonic: "RST", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xF0, mnemonic: "LDH", bytes: 2, cycles: &[12] },
     Opcode { opcode: 0xF1, mnemonic: "POP", bytes: 1, cycles: &[12] },
     Opcode { opcode: 0xF2, mnemonic: "LDH", bytes: 1, cycles: &[8] },
     Opcode { opcode: 0xF3, mnemonic: "DI", bytes: 1, cycles: &[4] },
-    Opcode { opcode: 0xF4, mnemonic: "ILLEGAL_F4", bytes: 1, cycles: &[4] }, 
+    Opcode { opcode: 0xF4, mnemonic: "ILLEGAL_F4", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xF5, mnemonic: "PUSH", bytes: 1, cycles: &[16] },
     Opcode { opcode: 0xF6, mnemonic: "OR", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xF7, mnemonic: "RST", bytes: 1, cycles: &[16] },
@@ -258,8 +258,8 @@ pub const OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xF9, mnemonic: "LD SP", bytes: 1, cycles: &[8] },
     Opcode { opcode: 0xFA, mnemonic: "LD", bytes: 3, cycles: &[16] },
     Opcode { opcode: 0xFB, mnemonic: "EI", bytes: 1, cycles: &[4] },
-    Opcode { opcode: 0xFC, mnemonic: "ILLEGAL_FC", bytes: 4, cycles: &[1] }, 
-    Opcode { opcode: 0xFD, mnemonic: "ILLEGAL_FD", bytes: 4, cycles: &[1] }, 
+    Opcode { opcode: 0xFC, mnemonic: "ILLEGAL_FC", bytes: 4, cycles: &[1] },
+    Opcode { opcode: 0xFD, mnemonic: "ILLEGAL_FD", bytes: 4, cycles: &[1] },
     Opcode { opcode: 0xFE, mnemonic: "CP", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xFF, mnemonic: "RST", bytes: 1, cycles: &[16] },
 ];
@@ -303,7 +303,7 @@ pub const CB_OPCODES: &[Opcode] = &[
     Opcode { opcode: 0x23, mnemonic: "SLA", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0x24, mnemonic: "SLA", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0x25, mnemonic: "SLA", bytes: 2, cycles: &[8] },
-	Opcode { opcode: 0x26, mnemonic: "SLA", bytes: 2, cycles: &[16] },
+    Opcode { opcode: 0x26, mnemonic: "SLA", bytes: 2, cycles: &[16] },
     Opcode { opcode: 0x27, mnemonic: "SLA", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0x28, mnemonic: "SRA", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0x29, mnemonic: "SRA", bytes: 2, cycles: &[8] },
@@ -520,7 +520,7 @@ pub const CB_OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xFC, mnemonic: "RES", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xFD, mnemonic: "RES", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xFE, mnemonic: "RES", bytes: 2, cycles: &[12] },
-    Opcode { opcode: 0xFF, mnemonic: "RES", bytes: 2, cycles: &[8] }
+    Opcode { opcode: 0xFF, mnemonic: "RES", bytes: 2, cycles: &[8] },
 ];
 
 pub const CLOCK_SPEED: u32 = 4_194_304; // 4.194304 MHz
@@ -529,3 +529,4 @@ pub const CYCLES_PER_FRAME: u32 = (CLOCK_SPEED as f32 / FRAME_RATE) as u32; // ~
 
 pub const SCREEN_WIDTH: u32 = 160;
 pub const SCREEN_HEIGHT: u32 = 144;
+pub const SCALE_FACTOR: u32 = 3;

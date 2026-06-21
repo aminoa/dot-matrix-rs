@@ -3,11 +3,6 @@ use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::cpu::{InterruptBit, CPU};
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
-use std::cell::RefCell;
-use std::marker;
-use std::process::exit;
-use std::rc::Rc;
-use std::thread::JoinHandle;
 
 pub struct PPU {
     pub framebuffer: [u8; 144 * 160],
@@ -75,11 +70,7 @@ impl PPU {
     pub fn new() -> PPU {
         let framebuffer = [0xFFu8; 144 * 160];
 
-        PPU {
-            framebuffer: framebuffer,
-            current_mode: PPUMode::OAM,
-            current_cycles: 0,
-        }
+        PPU { framebuffer: framebuffer, current_mode: PPUMode::OAM, current_cycles: 0 }
     }
 
     pub fn update(
@@ -214,20 +205,12 @@ impl PPU {
 
             let tile_map_base_bit = (lcdc >> LCDCBits::BackgroundTileMapArea as u8) & 1;
 
-            let tile_map_base: u16 = if tile_map_base_bit == 0 {
-                0x9800
-            } else {
-                0x9C00
-            };
+            let tile_map_base: u16 = if tile_map_base_bit == 0 { 0x9800 } else { 0x9C00 };
 
             let tile_data_base_bit =
                 (lcdc >> LCDCBits::BackgroundAndWindowTileDataSelect as u8) & 1;
 
-            let tile_data_base: u16 = if tile_data_base_bit == 0 {
-                0x8800
-            } else {
-                0x8000
-            };
+            let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
 
             // 32 tiles per row so going down one row requires * 32, / 8 because each tile is 8 * 8 px
             let scx = mmu.read_byte(PPUMemory::SCX as u16, cart, joypad);
@@ -299,20 +282,12 @@ impl PPU {
             let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
             let tile_map_base_bit = (lcdc >> LCDCBits::WindowTileMapDisplaySelect as u8) & 1;
 
-            let tile_map_base: u16 = if tile_map_base_bit == 0 {
-                0x9800
-            } else {
-                0x9C00
-            };
+            let tile_map_base: u16 = if tile_map_base_bit == 0 { 0x9800 } else { 0x9C00 };
 
             let tile_data_base_bit =
                 (lcdc >> LCDCBits::BackgroundAndWindowTileDataSelect as u8) & 1;
 
-            let tile_data_base: u16 = if tile_data_base_bit == 0 {
-                0x8800
-            } else {
-                0x8000
-            };
+            let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
 
             let window_y = scanline - wy;
             let window_x = x + 7 - wx as u16;
