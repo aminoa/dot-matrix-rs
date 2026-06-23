@@ -13,6 +13,8 @@ pub struct GB {
     pub ppu: PPU,
     pub cart: Cart,
     pub joypad: Joypad,
+
+    pub current_cycles: u32,
 }
 
 impl GB {
@@ -24,6 +26,36 @@ impl GB {
             ppu: PPU::new(),
             cart: Cart::from_rom(rom),
             joypad: Joypad::new(),
+
+            current_cycles: 0,
         };
+    }
+
+    pub fn step(&mut self) {
+        let instruction = self.mmu.read_byte(self.cpu.pc, &self.cart, &self.joypad);
+
+        let instruction_cycles =
+            self.cpu.execute(instruction, &mut self.mmu, &mut self.cart, &mut self.joypad);
+        self.cpu.check_interrupts(&mut self.mmu, &mut self.cart, &mut self.joypad);
+        self.cpu.update_timers(
+            instruction_cycles as u32,
+            &mut self.mmu,
+            &mut self.cart,
+            &mut self.joypad,
+        );
+        self.ppu.update(
+            instruction_cycles as u32,
+            &mut self.mmu,
+            &mut self.cpu,
+            &mut self.cart,
+            &mut self.joypad,
+        );
+
+        self.current_cycles += instruction_cycles as u32;
+
+        if self.mmu.read_byte(0xFF02, &self.cart, &self.joypad) == 0x81 {
+            print!("{}", self.mmu.read_byte(0xFF01, &self.cart, &self.joypad) as char);
+            self.mmu.write_byte(0xFF02, 0, &mut self.cart, &mut self.joypad);
+        }
     }
 }
