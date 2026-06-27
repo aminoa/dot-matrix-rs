@@ -8,6 +8,7 @@ pub struct PPU {
     pub framebuffer: [u8; 144 * 160],
     pub current_mode: PPUMode,
     pub current_cycles: u32,
+    pub stat_line: bool,
 }
 
 pub enum PPUMemory {
@@ -51,13 +52,14 @@ pub enum LCDCBits {
     LCDDisplayEnable = 7,
 }
 
-pub enum STATBit {
+pub enum LCDStatBits {
     PPUModeFlag0 = 0,
     PPUModeFlag1 = 1,
-    LYCEqualsLYInterrupt = 2,
-    Mode0IntSelect = 3,
-    Mode1IntSelect = 4,
-    Mode2IntSelect = 5,
+    LYCEqualsLY = 2,
+    Mode0IntSelect = 3, // H-Blank
+    Mode1IntSelect = 4, // V-Blank
+    Mode2IntSelect = 5, // OAM Scan
+    LCDIntSelect = 6,
 }
 
 // Color constants for better readability
@@ -70,7 +72,12 @@ impl PPU {
     pub fn new() -> PPU {
         let framebuffer = [0xFFu8; 144 * 160];
 
-        PPU { framebuffer: framebuffer, current_mode: PPUMode::OAM, current_cycles: 0 }
+        PPU {
+            framebuffer: framebuffer,
+            current_mode: PPUMode::OAM,
+            current_cycles: 0,
+            stat_line: false,
+        }
     }
 
     pub fn update(
@@ -103,10 +110,6 @@ impl PPU {
                     self.current_cycles -= 172;
                     self.current_mode = PPUMode::HBlank;
                     self.draw_scanline(scanline, mmu, cart, joypad);
-
-                    if (stat & (1 << STATBit::Mode0IntSelect as u8)) != 0 {
-                        cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad);
-                    }
                 }
             }
             // Mode 0
@@ -150,21 +153,36 @@ impl PPU {
         joypad: &mut Joypad,
     ) {
         let mut stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad);
+
+        // Update read-only stat information
+        // LYC = LY, bit 2 check
         let lyc = mmu.read_byte(PPUMemory::LYC as u16, cart, joypad);
-
         if scanline == lyc {
-            stat |= 1 << STATBit::LYCEqualsLYInterrupt as u8;
-            if (stat & (1 << STATBit::LYCEqualsLYInterrupt as u8)) != 0 {
-                cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad);
-            }
+            stat |= 1 << LCDStatBits::LYCEqualsLY as u8;
+            // if (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0 {
+            // }
         } else {
-            stat &= !(1 << STATBit::LYCEqualsLYInterrupt as u8);
+            stat &= !(1 << LCDStatBits::LYCEqualsLY as u8);
         }
+        let mode = self.current_mode.clone() as u8;
 
+        // bit 1 set
         stat &= !0b11; // Clear mode bits
         stat |= self.current_mode.clone() as u8;
-
         mmu.write_byte(PPUMemory::STAT as u16, stat, cart, joypad);
+        let current_stat_line = (mode == PPUMode::HBlank as u8
+            && (stat & (1 << LCDStatBits::Mode0IntSelect as u8)) != 0)
+            || (mode == PPUMode::VBlank as u8
+                && (stat & (1 << LCDStatBits::Mode1IntSelect as u8)) != 0)
+            || (mode == PPUMode::OAM as u8
+                && (stat & (1 << LCDStatBits::Mode2IntSelect as u8)) != 0)
+            || (scanline == lyc && (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0);
+
+        if !self.stat_line && current_stat_line {
+            cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad);
+        }
+
+        self.stat_line = current_stat_line;
     }
 
     pub fn draw_scanline(
