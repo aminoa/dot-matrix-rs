@@ -9,6 +9,7 @@ pub struct PPU {
     pub current_mode: PPUMode,
     pub current_cycles: u32,
     pub stat_line: bool,
+    pub window_line_counter: u8,
 }
 
 pub enum PPUMemory {
@@ -77,6 +78,7 @@ impl PPU {
             current_mode: PPUMode::OAM,
             current_cycles: 0,
             stat_line: false,
+            window_line_counter: 0,
         }
     }
 
@@ -121,6 +123,7 @@ impl PPU {
                         cpu.request_interrupt(InterruptBit::VBlank, mmu, cart, joypad);
                         mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad);
                         self.current_mode = PPUMode::VBlank;
+                        self.window_line_counter = 0;
                     } else {
                         mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad);
                         self.current_mode = PPUMode::OAM;
@@ -289,11 +292,18 @@ impl PPU {
         cart: &mut Cart,
         joypad: &mut Joypad,
     ) {
-        for x in 0..SCREEN_WIDTH as u16 {
-            let wx = mmu.read_byte(PPUMemory::WX as u16, cart, joypad);
-            let wy = mmu.read_byte(PPUMemory::WY as u16, cart, joypad);
+        let wx = mmu.read_byte(PPUMemory::WX as u16, cart, joypad);
+        let wy = mmu.read_byte(PPUMemory::WY as u16, cart, joypad);
 
-            if scanline < wy || x + 7 < wx as u16 {
+        if scanline < wy || wx >= 166 {
+            return;
+        }
+
+        let window_y = self.window_line_counter;
+        self.window_line_counter += 1;
+
+        for x in 0..SCREEN_WIDTH as u16 {
+            if x + 7 < wx as u16 {
                 continue;
             }
 
@@ -307,7 +317,6 @@ impl PPU {
 
             let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
 
-            let window_y = scanline - wy;
             let window_x = x + 7 - wx as u16;
             let tile_map_row_offset = ((window_y as u16 / 8) * 32) as u16;
             let tile_map_col_offset = (window_x as u16 / 8) as u16;
@@ -358,7 +367,7 @@ impl PPU {
         let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
         let sprite_size_bit = (lcdc >> LCDCBits::ObjectSize as u8) & 1;
         let sprite_height: u8 = if sprite_size_bit == 0 { 8 } else { 16 };
-        let mut visible_sprites: Vec<(i16, i16, u8, u8)> = Vec::with_capacity(10);
+        let mut visible_sprites: Vec<(i16, i16, u8, u8, u8)> = Vec::with_capacity(10);
 
         let oam_base: u16 = 0xFE00;
 
@@ -374,15 +383,30 @@ impl PPU {
 
             if sprite_y <= (scanline as i16) && (scanline as i16) < sprite_y + sprite_height as i16
             {
-                visible_sprites.push((sprite_x, sprite_y, tile_index, attributes));
+                visible_sprites.push((
+                    sprite_x,
+                    sprite_y,
+                    tile_index,
+                    attributes,
+                    sprite_index as u8,
+                ));
                 if visible_sprites.len() >= 10 {
                     break;
                 }
             }
         }
 
+        visible_sprites.sort_by(|a, b| {
+            if a.0 != b.0 {
+                b.0.cmp(&a.0)
+            } else {
+                // OAM index
+                b.4.cmp(&a.4)
+            }
+        });
+
         // Draw sprites
-        for (sprite_x, sprite_y, tile_index, attributes) in visible_sprites.into_iter() {
+        for (sprite_x, sprite_y, tile_index, attributes, _) in visible_sprites.into_iter() {
             let palette_select = (attributes >> OAMAttributesBits::PaletteNumber as u8) & 1;
             let x_flip = ((attributes >> OAMAttributesBits::XFlip as u8) & 1) != 0;
             let y_flip = ((attributes >> OAMAttributesBits::YFlip as u8) & 1) != 0;
