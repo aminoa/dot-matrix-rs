@@ -528,8 +528,7 @@ pub const CB_OPCODES: &[Opcode] = &[
 pub const CLOCK_SPEED: u32 = 4_194_304; // 4.194304 MHz
 pub const FRAME_RATE: f32 = 59.72746; // 59.72746 Hz
 pub const CYCLES_PER_FRAME: u32 = (CLOCK_SPEED as f32 / FRAME_RATE) as u32; // ~69905 cycles per frame
-pub const FRAME_INTERVAL: Duration =
-    Duration::from_nanos((1_000_000_000.0 / FRAME_RATE as f64) as u64);
+pub const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / FRAME_RATE as u64);
 
 pub const SCREEN_WIDTH: u32 = 160;
 pub const SCREEN_HEIGHT: u32 = 144;

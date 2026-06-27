@@ -46,25 +46,16 @@ pub fn run(rom_path: String, enable_debug: bool) -> eframe::Result<()> {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Capping frame rate
         let now = Instant::now();
-        if now < self.next_frame_at {
-            self.renderer.update(ui, &mut self.gb.mmu, &mut self.gb.ppu, &mut self.gb.joypad);
-            if self.enable_debug {
-                debugger::show(ui.ctx(), &self.gb.cpu);
+        if now >= self.next_frame_at {
+            while self.gb.current_cycles < CYCLES_PER_FRAME {
+                self.gb.step();
             }
-            return;
+            self.gb.current_cycles -= CYCLES_PER_FRAME;
+            self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
         }
 
-        self.next_frame_at = now + FRAME_INTERVAL;
-
-        while self.gb.current_cycles < CYCLES_PER_FRAME {
-            self.gb.step();
-        }
-
-        self.gb.current_cycles -= CYCLES_PER_FRAME;
         self.renderer.update(ui, &mut self.gb.mmu, &mut self.gb.ppu, &mut self.gb.joypad);
-
         if self.enable_debug {
             debugger::show(ui.ctx(), &self.gb.cpu);
         }
