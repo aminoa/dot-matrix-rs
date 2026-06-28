@@ -534,6 +534,6 @@ pub const SCREEN_WIDTH: u32 = 160;
 pub const SCREEN_HEIGHT: u32 = 144;
 pub const SCALE_FACTOR: u32 = 3;
 
-pub const ROM_BANK_SIZE: u32 = 0x4000;
-pub const RAM_BANK_SIZE: u16 = 0x2000;
+pub const ROM_BANK_SIZE: u32 = 0x4000; // 16384 bytes
+pub const RAM_BANK_SIZE: u16 = 0x2000; // 8192 bytes
 pub const RAM_START_ADDR: u16 = 0xA000;

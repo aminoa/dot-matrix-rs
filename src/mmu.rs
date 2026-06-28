@@ -32,6 +32,7 @@ impl MMU {
     pub fn write_byte(&mut self, addr: u16, val: u8, cart: &mut Cart, joypad: &mut Joypad) {
         match addr {
             0x0000..0x7FFF => cart.write_rom(addr, val),
+            0xA000..0xBFFF => cart.write_ram(addr, val),
             0xFF00 => joypad.write(val),
             0xFF46 => self.oam_dma_transfer(val, cart, joypad),
             _ => self.ram[addr as usize] = val,

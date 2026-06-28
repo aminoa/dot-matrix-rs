@@ -1,10 +1,29 @@
 use crate::consts::{RAM_BANK_SIZE, RAM_START_ADDR, ROM_BANK_SIZE};
 
-// R is RAM, B is Battery
 enum MBC {
     None,
     MBC1,
     MBC3,
+}
+
+enum ClockCounterRegisters {
+    None,
+    RTCS,
+    RTCM,
+    RTCH,
+    RTCDL,
+    RTCDH,
+}
+
+pub struct RTC {
+    pub selected_reg: ClockCounterRegisters,
+    pub latched: bool,
+
+    pub seconds: u8,
+    pub minutes: u8,
+    pub hours: u8,
+    pub dl: u8, // lower 8 bits of day counter
+    pub dh: u8, //;upper 1 bit of day counter, carry bit, halt flag
 }
 
 pub struct Cart {
@@ -15,12 +34,14 @@ pub struct Cart {
     pub rom_size_bytes: usize,
     pub ram_size_code: u8,
     pub ram_size_bytes: usize,
-    pub ram_enabled: bool,
+    pub ram_enabled: bool, //also does RTC registers for MBC3
     pub rom_bank_selected: u8,
     pub ram_bank_selected: u8,
     pub cartridge_type_mbc: MBC,
     pub ram: Vec<u8>,
     pub banking_mode: bool, // ranges locked to bank 0 by default
+
+    pub rtc: RTC,
 }
 
 impl Cart {
@@ -62,6 +83,15 @@ impl Cart {
         };
 
         let ram = vec![0u8; ram_size_bytes as usize];
+        let rtc = RTC {
+            selected_reg: ClockCounterRegisters::None,
+            latched: false,
+            seconds: 0,
+            minutes: 0,
+            hours: 0,
+            dl: 0, // lower 8 bits of day counter
+            dh: 0, //;upper 1 bit of day counter, carry bit, halt flag
+        };
 
         Cart {
             rom,
@@ -77,18 +107,24 @@ impl Cart {
             cartridge_type_mbc: cartridge_type_mbc,
             ram_bank_selected: 0,
             banking_mode: true,
+
+            rtc: rtc,
         }
     }
 
     pub fn read_rom(&self, addr: u16) -> u8 {
-        match addr {
-            0x0000..=0x3FFF => self.rom[addr as usize],
-            0x4000..=0x7FFF => {
-                let banked_addr = (self.rom_bank_selected as usize * ROM_BANK_SIZE as usize)
-                    + (addr as usize - ROM_BANK_SIZE as usize);
-                self.rom[banked_addr as usize]
-            }
-            _ => panic!("Address out of ROM range: {:04X}", addr),
+        match self.cartridge_type_mbc {
+            MBC::None => self.rom[addr as usize],
+            // Doesn't account for ROM bank bug in MBC1 (lower 5 bits set to 0 auto bump to 1)
+            MBC::MBC1 | MBC::MBC3 => match addr {
+                0x0000..=0x3FFF => self.rom[addr as usize],
+                0x4000..=0x7FFF => {
+                    let banked_addr = (self.rom_bank_selected as usize * ROM_BANK_SIZE as usize)
+                        + (addr as usize - ROM_BANK_SIZE as usize);
+                    self.rom[banked_addr as usize]
+                }
+                _ => panic!("Address out of ROM range: {:04X}", addr),
+            },
         }
     }
 
@@ -99,7 +135,7 @@ impl Cart {
                 0x0000..0x2000 => self.ram_enabled = val == 0x0A,
                 0x2000..0x4000 => self.select_rom_bank(val),
                 0x4000..0x6000 => {
-                    let reg = (val & 0x3);
+                    let reg = val & 0x3;
                     if self.banking_mode && self.ram_size_bytes >= 32 * 1024 {
                         // min 32 KiB
                         self.ram_bank_selected = reg;
@@ -114,6 +150,29 @@ impl Cart {
                 }
                 _ => panic!("Address out of ROM range: {:04X}", addr),
             },
+            MBC::MBC3 => match addr {
+                0x0000..0x2000 => self.ram_enabled = val == 0x0A,
+                0x2000..0x4000 => self.select_rom_bank(val),
+                0x4000..0x6000 => {
+                    let reg = val & 0xF;
+                    // map RAM bank
+                    if val <= 0x07 {
+                        self.ram_bank_selected = reg;
+                    } else { // map RTC register
+                    }
+                    // let reg = (val & 0x3);
+                }
+                0x6000..0x7FFF => {
+                    // latches clock data
+                    if val == 0x0 {
+                        self.rtc_latched = true;
+                    } else if self.rtc_latched && val == 0x01 {
+                        self.update_rtc();
+                        self.rtc_latched = false;
+                    }
+                }
+                _ => panic!("Address out of ROM range: {:04X}", addr),
+            },
             _ => panic!("Error: Unrecognized MBC"),
         }
     }
@@ -123,16 +182,49 @@ impl Cart {
             return 0xFF;
         }
 
-        let banked_addr = (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
-        return self.ram[banked_addr as usize];
+        match self.cartridge_type_mbc {
+            MBC::MBC1 => {
+                let banked_addr =
+                    (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                return self.ram[banked_addr as usize];
+            }
+            MBC::MBC3 => {
+                let banked_addr =
+                    (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                return self.ram[banked_addr as usize];
+            }
+            _ => panic!("Error: Unrecognized MBC"),
+        }
     }
 
-    pub fn select_rom_bank(&mut self, value: u8) {
-        let bank = value & 0x1F; // 5 bit register
-        match bank {
-            0 => self.rom_bank_selected = 1,
-            0x20 | 0x40 | 0x60 => self.rom_bank_selected = bank + 1,
-            _ => self.rom_bank_selected = bank,
+    pub fn write_ram(&mut self, addr: u16, val: u8) {
+        let banked_addr = (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+        self.ram[banked_addr as usize] = val;
+    }
+
+    pub fn select_rom_bank(&mut self, val: u8) {
+        match self.cartridge_type_mbc {
+            MBC::MBC1 => {
+                let bank = val & 0x1F; // 5 bit register
+                match bank {
+                    0 => self.rom_bank_selected = 1,
+                    0x20 | 0x40 | 0x60 => self.rom_bank_selected = bank + 1,
+                    _ => self.rom_bank_selected = bank,
+                }
+            }
+            MBC::MBC3 => {
+                let bank = val & 0x7F; // 7 bit register
+                if bank == 0 {
+                    self.rom_bank_selected = 1
+                } else {
+                    self.rom_bank_selected = bank;
+                }
+            }
+            _ => panic!("Error: Unrecognized MBC"),
         }
+    }
+
+    pub fn update_rtc(&self) {
+        for clock_register in 0x0..0x05 {}
     }
 }
