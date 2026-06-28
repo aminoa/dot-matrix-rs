@@ -3,16 +3,44 @@ use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::joypad::{Joypad, JoypadButton};
 use crate::mmu::MMU;
 use crate::ppu::PPU;
+use gilrs::{Button, EventType, Gilrs};
 use std::time::{Duration, Instant};
 
 pub struct Renderer {
     texture: Option<egui::TextureHandle>,
     autosave_timer: Instant,
+    gilrs: Option<Gilrs>,
 }
 
 impl Renderer {
     pub fn new() -> Self {
-        Renderer { texture: None, autosave_timer: Instant::now() + Duration::from_secs(10) }
+        Renderer {
+            texture: None,
+            autosave_timer: Instant::now() + Duration::from_secs(10),
+            gilrs: {
+                let g = Gilrs::new().ok();
+                if let Some(ref g) = g {
+                    for (id, gamepad) in g.gamepads() {
+                        println!("gilrs: detected {} ({:?})", gamepad.name(), id);
+                    }
+                }
+                g
+            },
+        }
+    }
+
+    fn map_gamepad_button(button: Button) -> Option<JoypadButton> {
+        match button {
+            Button::DPadUp => Some(JoypadButton::Up),
+            Button::DPadDown => Some(JoypadButton::Down),
+            Button::DPadLeft => Some(JoypadButton::Left),
+            Button::DPadRight => Some(JoypadButton::Right),
+            Button::South => Some(JoypadButton::A),
+            Button::West => Some(JoypadButton::B),
+            Button::Start => Some(JoypadButton::Start),
+            Button::Select => Some(JoypadButton::Select),
+            _ => None,
+        }
     }
 
     pub fn update(
@@ -55,6 +83,31 @@ impl Renderer {
             )
         });
 
+        if let Some(gilrs) = &mut self.gilrs {
+            while let Some(event) = gilrs.next_event() {
+                match event.event {
+                    EventType::Connected => {
+                        let pad = gilrs.gamepad(event.id);
+                        println!("gilrs: connected {} ({:?})", pad.name(), event.id);
+                    }
+                    EventType::Disconnected => {
+                        println!("gilrs: disconnected {:?}", event.id);
+                    }
+                    EventType::ButtonPressed(button, _) => {
+                        if let Some(b) = Self::map_gamepad_button(button) {
+                            joypad.press_button(b);
+                        }
+                    }
+                    EventType::ButtonReleased(button, _) => {
+                        if let Some(b) = Self::map_gamepad_button(button) {
+                            joypad.release_button(b);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         ui.input(|i| {
             for (key, button) in [
                 (egui::Key::ArrowUp, JoypadButton::Up),
@@ -66,9 +119,10 @@ impl Renderer {
                 (egui::Key::Enter, JoypadButton::Start),
                 (egui::Key::Space, JoypadButton::Select),
             ] {
-                if i.key_down(key) {
+                if i.key_pressed(key) {
                     joypad.press_button(button);
-                } else {
+                }
+                if i.key_released(key) {
                     joypad.release_button(button);
                 }
             }

@@ -19,6 +19,10 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - Savestates (F1/F2)
 - APU (WIP)
 
+## Test ROMs
+
+
+
 ## Credits:
 
 - [GB Opcodes Table](https://gbdev.io/gb-opcodes/optables/)
