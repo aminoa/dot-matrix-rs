@@ -3,6 +3,7 @@ use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::cpu::{InterruptBit, CPU};
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
+use crate::ppu::PPUMemory::LY;
 
 pub struct PPU {
     pub framebuffer: [u8; 144 * 160],
@@ -92,6 +93,13 @@ impl PPU {
     ) {
         let scanline = mmu.read_byte(PPUMemory::LY as u16, cart, joypad);
         let stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad);
+        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+
+        if lcdc & (1 << LCDCBits::LCDDisplayEnable as u8) == 0 {
+            mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad);
+            self.current_cycles = 0;
+            return;
+        }
 
         self.update_stat(scanline, mmu, cpu, cart, joypad);
 
