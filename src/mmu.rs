@@ -66,6 +66,7 @@ impl MMU {
         let rom_path = Path::new(rom_path);
         let mut savestate_path = PathBuf::from(rom_path);
         savestate_path.set_extension("st");
+        println!("Savestate saved: {}", savestate_path.display());
 
         fs::write(&savestate_path, &self.ram[0x8000..0x10000]).unwrap();
         // println!("Savestate written to {}", savestate_path);
@@ -75,6 +76,7 @@ impl MMU {
         let rom_path = Path::new(rom_path);
         let mut savestate_path = PathBuf::from(rom_path);
         savestate_path.set_extension("st");
+        println!("Savestate loaded: {}", savestate_path.display());
 
         let mut savestate_file =
             File::open(savestate_path).expect("Failed to open save state file");

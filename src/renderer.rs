@@ -3,14 +3,20 @@ use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::joypad::{Joypad, JoypadButton};
 use crate::mmu::MMU;
 use crate::ppu::PPU;
-use gilrs::{Button, EventType, Gilrs};
+use gilrs::{Axis, Button, EventType, Gilrs};
 use std::time::{Duration, Instant};
 
 pub struct Renderer {
     texture: Option<egui::TextureHandle>,
     autosave_timer: Instant,
     gilrs: Option<Gilrs>,
+    stick_up: bool,
+    stick_down: bool,
+    stick_left: bool,
+    stick_right: bool,
 }
+
+const STICK_DEADZONE: f32 = 0.5;
 
 impl Renderer {
     pub fn new() -> Self {
@@ -26,6 +32,38 @@ impl Renderer {
                 }
                 g
             },
+            stick_up: false,
+            stick_down: false,
+            stick_left: false,
+            stick_right: false,
+        }
+    }
+
+    fn update_stick_axis(
+        joypad: &mut Joypad,
+        value: f32,
+        neg_state: &mut bool,
+        pos_state: &mut bool,
+        neg_button: JoypadButton,
+        pos_button: JoypadButton,
+    ) {
+        let neg = value <= -STICK_DEADZONE;
+        let pos = value >= STICK_DEADZONE;
+        if neg != *neg_state {
+            if neg {
+                joypad.press_button(neg_button);
+            } else {
+                joypad.release_button(neg_button);
+            }
+            *neg_state = neg;
+        }
+        if pos != *pos_state {
+            if pos {
+                joypad.press_button(pos_button);
+            } else {
+                joypad.release_button(pos_button);
+            }
+            *pos_state = pos;
         }
     }
 
@@ -93,15 +131,39 @@ impl Renderer {
                     EventType::Disconnected => {
                         println!("gilrs: disconnected {:?}", event.id);
                     }
-                    EventType::ButtonPressed(button, _) => {
-                        if let Some(b) = Self::map_gamepad_button(button) {
-                            joypad.press_button(b);
+                    EventType::ButtonPressed(button, _) => match button {
+                        Button::RightTrigger => mmu.savestate(rom_path),
+                        Button::LeftTrigger => mmu.loadstate(rom_path),
+                        _ => {
+                            if let Some(b) = Self::map_gamepad_button(button) {
+                                joypad.press_button(b);
+                            }
                         }
-                    }
+                    },
                     EventType::ButtonReleased(button, _) => {
                         if let Some(b) = Self::map_gamepad_button(button) {
                             joypad.release_button(b);
                         }
+                    }
+                    EventType::AxisChanged(Axis::LeftStickX, value, _) => {
+                        Self::update_stick_axis(
+                            joypad,
+                            value,
+                            &mut self.stick_left,
+                            &mut self.stick_right,
+                            JoypadButton::Left,
+                            JoypadButton::Right,
+                        );
+                    }
+                    EventType::AxisChanged(Axis::LeftStickY, value, _) => {
+                        Self::update_stick_axis(
+                            joypad,
+                            value,
+                            &mut self.stick_down,
+                            &mut self.stick_up,
+                            JoypadButton::Down,
+                            JoypadButton::Up,
+                        );
                     }
                     _ => {}
                 }
