@@ -1,4 +1,5 @@
 use crate::consts::{RAM_BANK_SIZE, RAM_START_ADDR, ROM_BANK_SIZE};
+use chrono::{Date, DateTime, Local, Timelike};
 
 enum MBC {
     None,
@@ -6,7 +7,7 @@ enum MBC {
     MBC3,
 }
 
-enum ClockCounterRegisters {
+pub enum ClockCounterRegisters {
     None,
     RTCS,
     RTCM,
@@ -23,7 +24,8 @@ pub struct RTC {
     pub minutes: u8,
     pub hours: u8,
     pub dl: u8, // lower 8 bits of day counter
-    pub dh: u8, //;upper 1 bit of day counter, carry bit, halt flag
+    pub dh: u8, // upper 1 bit of day counter, carry bit, halt flag
+    pub start_date: DateTime<Local>,
 }
 
 pub struct Cart {
@@ -83,6 +85,8 @@ impl Cart {
         };
 
         let ram = vec![0u8; ram_size_bytes as usize];
+        let start_date = Local::now();
+
         let rtc = RTC {
             selected_reg: ClockCounterRegisters::None,
             latched: false,
@@ -91,6 +95,8 @@ impl Cart {
             hours: 0,
             dl: 0, // lower 8 bits of day counter
             dh: 0, //;upper 1 bit of day counter, carry bit, halt flag
+
+            start_date: start_date,
         };
 
         Cart {
@@ -155,20 +161,23 @@ impl Cart {
                 0x2000..0x4000 => self.select_rom_bank(val),
                 0x4000..0x6000 => {
                     let reg = val & 0xF;
-                    // map RAM bank
-                    if val <= 0x07 {
-                        self.ram_bank_selected = reg;
-                    } else { // map RTC register
+                    match reg {
+                        0x00..0x08 => self.ram_bank_selected = reg,
+                        0x08 => self.rtc.selected_reg = ClockCounterRegisters::RTCS,
+                        0x09 => self.rtc.selected_reg = ClockCounterRegisters::RTCM,
+                        0x0A => self.rtc.selected_reg = ClockCounterRegisters::RTCH,
+                        0x0B => self.rtc.selected_reg = ClockCounterRegisters::RTCDL,
+                        0x0C => self.rtc.selected_reg = ClockCounterRegisters::RTCDH,
+                        _ => self.rtc.selected_reg = ClockCounterRegisters::None,
                     }
-                    // let reg = (val & 0x3);
                 }
                 0x6000..0x7FFF => {
                     // latches clock data
                     if val == 0x0 {
-                        self.rtc_latched = true;
-                    } else if self.rtc_latched && val == 0x01 {
+                        self.rtc.latched = true;
+                    } else if self.rtc.latched && val == 0x01 {
                         self.update_rtc();
-                        self.rtc_latched = false;
+                        self.rtc.latched = false;
                     }
                 }
                 _ => panic!("Address out of ROM range: {:04X}", addr),
@@ -224,7 +233,21 @@ impl Cart {
         }
     }
 
-    pub fn update_rtc(&self) {
-        for clock_register in 0x0..0x05 {}
+    pub fn update_rtc(&mut self) {
+        let now = Local::now();
+        self.rtc.hours = now.hour() as u8;
+        self.rtc.minutes = now.minute() as u8;
+        self.rtc.seconds = now.second() as u8;
+
+        let duration = now.signed_duration_since(self.rtc.start_date);
+        let total_days = duration.num_days();
+        self.rtc.dl = (total_days & 0xFF) as u8;
+
+        if total_days > 255 {
+            self.rtc.dh |= 0x01;
+        }
+        if total_days > 511 {
+            self.rtc.dh |= 0x80;
+        }
     }
 }
