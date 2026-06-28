@@ -1,14 +1,10 @@
-use eframe::wgpu::naga::valid::FunctionError::LastCaseFallTrough;
+use crate::consts::{RAM_BANK_SIZE, RAM_START_ADDR, ROM_BANK_SIZE};
 
 // R is RAM, B is Battery
 enum MBC {
     None,
     MBC1,
-    MBC1R,
-    MBC1RB,
     MBC3,
-    MBC3R,
-    MBC3RB,
 }
 
 pub struct Cart {
@@ -21,8 +17,10 @@ pub struct Cart {
     pub ram_size_bytes: usize,
     pub ram_enabled: bool,
     pub rom_bank_selected: u8,
-
+    pub ram_bank_selected: u8,
     pub cartridge_type_mbc: MBC,
+    pub ram: Vec<u8>,
+    pub banking_mode: bool, // ranges locked to bank 0 by default
 }
 
 impl Cart {
@@ -35,12 +33,8 @@ impl Cart {
         let cartridge_type = rom[0x147];
         let cartridge_type_mbc = match cartridge_type {
             0x0 => MBC::None,
-            0x1 => MBC::MBC1,
-            0x2 => MBC::MBC1R,
-            0x3 => MBC::MBC1RB,
-            0x11 => MBC::MBC3,
-            0x12 => MBC::MBC3R,
-            0x13 => MBC::MBC3RB,
+            0x1 | 0x2 | 0x3 => MBC::MBC1,
+            0x11 | 0x12 | 0x13 => MBC::MBC3,
             _ => MBC::None,
         };
 
@@ -67,6 +61,8 @@ impl Cart {
             _ => panic!("Unsupported RAM size code: {}", ram_size_code),
         };
 
+        let ram = vec![0u8; ram_size_bytes as usize];
+
         Cart {
             rom,
             title,
@@ -76,8 +72,11 @@ impl Cart {
             ram_size_code,
             ram_size_bytes,
             ram_enabled: false,
+            ram: ram,
             rom_bank_selected: 1,
             cartridge_type_mbc: cartridge_type_mbc,
+            ram_bank_selected: 0,
+            banking_mode: true,
         }
     }
 
@@ -85,25 +84,55 @@ impl Cart {
         match addr {
             0x0000..=0x3FFF => self.rom[addr as usize],
             0x4000..=0x7FFF => {
-                let banked_addr =
-                    (self.rom_bank_selected as usize * 0x4000) + (addr as usize - 0x4000);
+                let banked_addr = (self.rom_bank_selected as usize * ROM_BANK_SIZE as usize)
+                    + (addr as usize - ROM_BANK_SIZE as usize);
                 self.rom[banked_addr as usize]
             }
             _ => panic!("Address out of ROM range: {:04X}", addr),
         }
     }
 
-    pub fn read_ram(&self, addr: u16) -> u8 {
-        return 0;
+    pub fn write_rom(&mut self, addr: u16, val: u8) {
+        match self.cartridge_type_mbc {
+            MBC::None => (),
+            MBC::MBC1 => match addr {
+                0x0000..0x2000 => self.ram_enabled = val == 0x0A,
+                0x2000..0x4000 => self.select_rom_bank(val),
+                0x4000..0x6000 => {
+                    let reg = (val & 0x3);
+                    if self.banking_mode && self.ram_size_bytes >= 32 * 1024 {
+                        // min 32 KiB
+                        self.ram_bank_selected = reg;
+                    } else if self.rom_size_bytes >= 1 * 1024 * 1024 {
+                        // min 1 MiB
+                        self.rom_bank_selected |= reg << 5;
+                    }
+                }
+                0x6000..0x7FFF => {
+                    let reg = val & 0x1;
+                    self.banking_mode = reg == 0;
+                }
+                _ => panic!("Address out of ROM range: {:04X}", addr),
+            },
+            _ => panic!("Error: Unrecognized MBC"),
+        }
     }
 
-    pub fn enable_ram(&mut self, value: u8) {
-        // RAM is enabled if the lower nibble is 0x0A
-        self.ram_enabled = (value & 0x0F) == 0x0A;
+    pub fn read_ram(&self, addr: u16) -> u8 {
+        if !self.ram_enabled {
+            return 0xFF;
+        }
+
+        let banked_addr = (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+        return self.ram[banked_addr as usize];
     }
 
     pub fn select_rom_bank(&mut self, value: u8) {
-        let bank = value & 0x1F;
-        self.rom_bank_selected = if bank == 0 { 1 } else { bank };
+        let bank = value & 0x1F; // 5 bit register
+        match bank {
+            0 => self.rom_bank_selected = 1,
+            0x20 | 0x40 | 0x60 => self.rom_bank_selected = bank + 1,
+            _ => self.rom_bank_selected = bank,
+        }
     }
 }

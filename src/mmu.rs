@@ -29,15 +29,12 @@ impl MMU {
         }
     }
 
-    pub fn write_byte(&mut self, addr: u16, value: u8, cart: &mut Cart, joypad: &mut Joypad) {
+    pub fn write_byte(&mut self, addr: u16, val: u8, cart: &mut Cart, joypad: &mut Joypad) {
         match addr {
-            0x0..0x1FFF => cart.enable_ram(value),
-            0x2000..0x3FFF => cart.select_rom_bank(value),
-
-            0xFF00 => joypad.write(value),
-            0xFF46 => self.oam_dma_transfer(value, cart, joypad),
-            0x0..=0x7FFF => (), // Ignore writes to ROM
-            _ => self.ram[addr as usize] = value,
+            0x0000..0x7FFF => cart.write_rom(addr, val),
+            0xFF00 => joypad.write(val),
+            0xFF46 => self.oam_dma_transfer(val, cart, joypad),
+            _ => self.ram[addr as usize] = val,
         }
     }
 
@@ -46,9 +43,9 @@ impl MMU {
             | ((self.read_byte(addr + 1, cart, joypad) as u16) << 8)
     }
 
-    pub fn write_short(&mut self, addr: u16, value: u16, cart: &mut Cart, joypad: &mut Joypad) {
-        self.write_byte(addr, (value & 0xFF) as u8, cart, joypad);
-        self.write_byte(addr + 1, (value >> 8) as u8, cart, joypad);
+    pub fn write_short(&mut self, addr: u16, val: u16, cart: &mut Cart, joypad: &mut Joypad) {
+        self.write_byte(addr, (val & 0xFF) as u8, cart, joypad);
+        self.write_byte(addr + 1, (val >> 8) as u8, cart, joypad);
     }
 
     // copy 160 bytes to OAM (0xFE00)
