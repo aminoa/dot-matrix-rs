@@ -12,6 +12,7 @@ use crate::renderer::Renderer;
 
 pub struct App {
     gb: GB,
+    rom_path: String,
     renderer: Renderer,
     enable_debug: bool,
     next_frame_at: Instant,
@@ -20,7 +21,8 @@ pub struct App {
 impl App {
     pub fn new(rom_path: String, enable_debug: bool) -> Self {
         App {
-            gb: GB::new(rom_path),
+            gb: GB::new(&rom_path),
+            rom_path: rom_path,
             renderer: Renderer::new(),
             enable_debug: enable_debug,
             next_frame_at: Instant::now() + FRAME_INTERVAL,
@@ -55,7 +57,14 @@ impl eframe::App for App {
             self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
         }
 
-        self.renderer.update(ui, &mut self.gb.mmu, &mut self.gb.ppu, &mut self.gb.joypad);
+        self.renderer.update(
+            ui,
+            &mut self.gb.mmu,
+            &mut self.gb.ppu,
+            &mut self.gb.joypad,
+            &mut self.gb.cart,
+            &self.rom_path,
+        );
         if self.enable_debug {
             debugger::show(ui.ctx(), &self.gb.cpu);
         }

@@ -1,18 +1,31 @@
+use crate::cart::Cart;
 use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::joypad::{Joypad, JoypadButton};
 use crate::mmu::MMU;
 use crate::ppu::PPU;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub struct Renderer {
     texture: Option<egui::TextureHandle>,
+    autosave_timer: Instant,
 }
 
 impl Renderer {
     pub fn new() -> Self {
-        Renderer { texture: None }
+        Renderer { texture: None, autosave_timer: Instant::now() + Duration::from_secs(10) }
     }
 
-    pub fn update(&mut self, ui: &mut egui::Ui, mmu: &mut MMU, ppu: &mut PPU, joypad: &mut Joypad) {
+    pub fn update(
+        &mut self,
+        ui: &mut egui::Ui,
+        mmu: &mut MMU,
+        ppu: &mut PPU,
+        joypad: &mut Joypad,
+        cart: &mut Cart,
+        rom_path: &String,
+    ) {
         let pixels: Vec<egui::Color32> =
             ppu.framebuffer.iter().map(|&pixel| egui::Color32::from_gray(pixel)).collect();
         // map pixel bytes into GPU buffer
@@ -67,6 +80,17 @@ impl Renderer {
             }
             if i.key_pressed(egui::Key::F2) {
                 mmu.loadstate();
+            }
+
+            // Dump save every 10 seconds
+            if cart.battery_support {
+                let now = Instant::now();
+                if now > self.autosave_timer {
+                    let rom_path = Path::new(rom_path);
+                    let mut save_path = PathBuf::from(rom_path);
+                    save_path.set_extension("sav");
+                    fs::write(&save_path, &cart.ram).expect("Error: unable to write RAM contents")
+                }
             }
         });
 

@@ -40,6 +40,7 @@ pub struct Cart {
     pub rom_bank_selected: u8,
     pub ram_bank_selected: u8,
     pub cartridge_type_mbc: MBC,
+    pub battery_support: bool,
     pub ram: Vec<u8>,
     pub banking_mode: bool, // ranges locked to bank 0 by default
 
@@ -60,6 +61,8 @@ impl Cart {
             0x11 | 0x12 | 0x13 => MBC::MBC3,
             _ => MBC::None,
         };
+        let battery_support =
+            cartridge_type == 0x03 || cartridge_type == 0x06 || cartridge_type == 0x09;
 
         let rom_size_code = rom[0x148];
         let ram_size_code = rom[0x149];
@@ -111,6 +114,7 @@ impl Cart {
             ram: ram,
             rom_bank_selected: 1,
             cartridge_type_mbc: cartridge_type_mbc,
+            battery_support: battery_support,
             ram_bank_selected: 0,
             banking_mode: true,
 
@@ -147,10 +151,10 @@ impl Cart {
                         self.ram_bank_selected = reg;
                     } else if self.rom_size_bytes >= 1 * 1024 * 1024 {
                         // min 1 MiB
-                        self.rom_bank_selected |= reg << 5;
+                        self.rom_bank_selected = (reg << 5) | (self.rom_bank_selected & 0x1F);
                     }
                 }
-                0x6000..0x7FFF => {
+                0x6000..0x8000 => {
                     let reg = val & 0x1;
                     self.banking_mode = reg == 0;
                 }
@@ -171,7 +175,7 @@ impl Cart {
                         _ => self.rtc.selected_reg = ClockCounterRegisters::None,
                     }
                 }
-                0x6000..0x7FFF => {
+                0x6000..0x8000 => {
                     // latches clock data
                     if val == 0x0 {
                         self.rtc.latched = true;
@@ -214,12 +218,11 @@ impl Cart {
     pub fn select_rom_bank(&mut self, val: u8) {
         match self.cartridge_type_mbc {
             MBC::MBC1 => {
-                let bank = val & 0x1F; // 5 bit register
-                match bank {
-                    0 => self.rom_bank_selected = 1,
-                    0x20 | 0x40 | 0x60 => self.rom_bank_selected = bank + 1,
-                    _ => self.rom_bank_selected = bank,
+                let mut bank = val & 0x1F; // 5 bit register
+                if bank == 0 {
+                    bank = 1;
                 }
+                self.rom_bank_selected = self.rom_bank_selected & 0x60 | bank;
             }
             MBC::MBC3 => {
                 let bank = val & 0x7F; // 7 bit register

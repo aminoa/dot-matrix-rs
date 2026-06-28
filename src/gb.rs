@@ -19,7 +19,7 @@ pub struct GB {
 }
 
 impl GB {
-    pub fn new(rom_path: String) -> GB {
+    pub fn new(rom_path: &String) -> GB {
         let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
         return GB {
             apu: APU::new(),
