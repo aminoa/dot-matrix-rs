@@ -1,10 +1,10 @@
 use crate::cart::Cart;
 use crate::joypad::Joypad;
-use std::cell::RefCell;
+use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use std::rc::Rc;
+use std::path::{Path, PathBuf};
 
 pub struct MMU {
     pub ram: Vec<u8>,
@@ -60,21 +60,38 @@ impl MMU {
         }
     }
 
-    pub fn savestate(&self) {
+    pub fn savestate(&self, rom_path: &String) {
         // dump the MMU to a file
         // MMU: dump everything from 0x8000 to 0xFFFF
-        let mut file = File::create("savestate.mmu").unwrap();
-        file.write_all(&self.ram[0x8000..0x10000]).unwrap();
-        println!("Savestate written to savestate.mmu");
+        let rom_path = Path::new(rom_path);
+        let mut savestate_path = PathBuf::from(rom_path);
+        savestate_path.set_extension("st");
+
+        fs::write(&savestate_path, &self.ram[0x8000..0x10000]).unwrap();
+        // println!("Savestate written to {}", savestate_path);
     }
 
-    pub fn loadstate(&mut self) {
-        let mut file = File::open("savestate.mmu").unwrap();
+    pub fn loadstate(&mut self, rom_path: &String) {
+        let rom_path = Path::new(rom_path);
+        let mut savestate_path = PathBuf::from(rom_path);
+        savestate_path.set_extension("st");
+
+        let mut savestate_file =
+            File::open(savestate_path).expect("Failed to open save state file");
         let mut buffer = vec![0; 0x10000 - 0x8000];
-        file.read_exact(&mut buffer).unwrap();
+        savestate_file
+            .read_exact(&mut buffer)
+            .expect("Failed to read the expected amount of bytes");
 
         for (i, &byte) in buffer.iter().enumerate() {
             self.ram[0x8000 + i] = byte;
         }
+    }
+
+    pub fn saveram(&mut self, rom_path: &String, cart: &Cart) {
+        let rom_path = Path::new(rom_path);
+        let mut save_path = PathBuf::from(rom_path);
+        save_path.set_extension("sav");
+        fs::write(&save_path, &cart.ram).expect("Error: unable to write RAM contents")
     }
 }

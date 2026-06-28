@@ -3,8 +3,6 @@ use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::joypad::{Joypad, JoypadButton};
 use crate::mmu::MMU;
 use crate::ppu::PPU;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub struct Renderer {
@@ -76,20 +74,17 @@ impl Renderer {
             }
 
             if i.key_pressed(egui::Key::F1) {
-                mmu.savestate();
+                mmu.savestate(rom_path);
             }
             if i.key_pressed(egui::Key::F2) {
-                mmu.loadstate();
+                mmu.loadstate(rom_path);
             }
 
             // Dump save every 10 seconds
             if cart.battery_support {
                 let now = Instant::now();
                 if now > self.autosave_timer {
-                    let rom_path = Path::new(rom_path);
-                    let mut save_path = PathBuf::from(rom_path);
-                    save_path.set_extension("sav");
-                    fs::write(&save_path, &cart.ram).expect("Error: unable to write RAM contents")
+                    mmu.saveram(rom_path, cart);
                 }
             }
         });

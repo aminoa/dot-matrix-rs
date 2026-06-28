@@ -211,8 +211,25 @@ impl Cart {
     }
 
     pub fn write_ram(&mut self, addr: u16, val: u8) {
-        let banked_addr = (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
-        self.ram[banked_addr as usize] = val;
+        if !self.ram_enabled {
+            return;
+        }
+        match self.cartridge_type_mbc {
+            MBC::None => (),
+            MBC::MBC1 => {
+                let banked_addr =
+                    (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                self.ram[banked_addr as usize] = val;
+            }
+            MBC::MBC3 => {
+                if self.ram_bank_selected < 0x08 {
+                    let banked_addr =
+                        (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                    self.ram[banked_addr as usize] = val;
+                }
+                // TODO: rtc register write
+            }
+        }
     }
 
     pub fn select_rom_bank(&mut self, val: u8) {

@@ -69,4 +69,10 @@ impl eframe::App for App {
             debugger::show(ui.ctx(), &self.gb.cpu);
         }
     }
+
+    fn on_exit(&mut self) {
+        if self.gb.cart.battery_support {
+            self.gb.mmu.saveram(&self.rom_path, &self.gb.cart);
+        }
+    }
 }
