@@ -15,13 +15,9 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - Timing (both the clock and timers) is properly emulated
 - PPU background rendering is more accurate and window/object rendering has been added
 - Joypad inputs
-- Memory banking
+- Memory banking (WIP)
 - Savestates (F1/F2)
-
-## Out of Scope:
-
-- Pixel FIFO
-- APU
+- APU (WIP)
 
 ## Credits:
 

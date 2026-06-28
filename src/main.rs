@@ -1,4 +1,5 @@
 mod app;
+mod apu;
 mod cart;
 mod consts;
 mod cpu;

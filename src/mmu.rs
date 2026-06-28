@@ -24,6 +24,7 @@ impl MMU {
             0xA000..0xBFFF => cart.read_ram(addr), // if this exists
             0xFF00 => joypad.read(),
             0xFF01 => 0xFF, // Dummy value for serial data register
+            // 0xFF10..0xFF26 => apu.read_register(addr),
             _ => self.ram[addr as usize],
         }
     }
