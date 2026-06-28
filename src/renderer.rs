@@ -1,8 +1,6 @@
-use crate::cart::Cart;
 use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::gb::GB;
 use crate::joypad::{Joypad, JoypadButton};
-use crate::mmu::MMU;
-use crate::ppu::PPU;
 use gilrs::{Axis, Button, EventType, Gilrs};
 use std::time::{Duration, Instant};
 
@@ -81,17 +79,9 @@ impl Renderer {
         }
     }
 
-    pub fn update(
-        &mut self,
-        ui: &mut egui::Ui,
-        mmu: &mut MMU,
-        ppu: &mut PPU,
-        joypad: &mut Joypad,
-        cart: &mut Cart,
-        rom_path: &String,
-    ) {
+    pub fn update(&mut self, ui: &mut egui::Ui, gb: &mut GB, rom_path: &String) {
         let pixels: Vec<egui::Color32> =
-            ppu.framebuffer.iter().map(|&pixel| egui::Color32::from_gray(pixel)).collect();
+            gb.ppu.framebuffer.iter().map(|&pixel| egui::Color32::from_gray(pixel)).collect();
         // map pixel bytes into GPU buffer
         let image = egui::ColorImage::new([SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize], pixels);
 
@@ -121,6 +111,9 @@ impl Renderer {
             )
         });
 
+        let mut do_savetate = false;
+        let mut do_loadstate = false;
+
         if let Some(gilrs) = &mut self.gilrs {
             while let Some(event) = gilrs.next_event() {
                 match event.event {
@@ -132,22 +125,22 @@ impl Renderer {
                         println!("gilrs: disconnected {:?}", event.id);
                     }
                     EventType::ButtonPressed(button, _) => match button {
-                        Button::RightTrigger => mmu.savestate(rom_path),
-                        Button::LeftTrigger => mmu.loadstate(rom_path),
+                        Button::RightTrigger => do_savetate = true,
+                        Button::LeftTrigger => do_loadstate = true,
                         _ => {
                             if let Some(b) = Self::map_gamepad_button(button) {
-                                joypad.press_button(b);
+                                gb.joypad.press_button(b);
                             }
                         }
                     },
                     EventType::ButtonReleased(button, _) => {
                         if let Some(b) = Self::map_gamepad_button(button) {
-                            joypad.release_button(b);
+                            gb.joypad.release_button(b);
                         }
                     }
                     EventType::AxisChanged(Axis::LeftStickX, value, _) => {
                         Self::update_stick_axis(
-                            joypad,
+                            &mut gb.joypad,
                             value,
                             &mut self.stick_left,
                             &mut self.stick_right,
@@ -157,7 +150,7 @@ impl Renderer {
                     }
                     EventType::AxisChanged(Axis::LeftStickY, value, _) => {
                         Self::update_stick_axis(
-                            joypad,
+                            &mut gb.joypad,
                             value,
                             &mut self.stick_down,
                             &mut self.stick_up,
@@ -169,6 +162,8 @@ impl Renderer {
                 }
             }
         }
+
+        let autosave_due = gb.cart.battery_support && Instant::now() > self.autosave_timer;
 
         ui.input(|i| {
             for (key, button) in [
@@ -182,28 +177,31 @@ impl Renderer {
                 (egui::Key::Space, JoypadButton::Select),
             ] {
                 if i.key_pressed(key) {
-                    joypad.press_button(button);
+                    gb.joypad.press_button(button);
                 }
                 if i.key_released(key) {
-                    joypad.release_button(button);
+                    gb.joypad.release_button(button);
                 }
             }
 
             if i.key_pressed(egui::Key::F1) {
-                mmu.savestate(rom_path);
+                do_savetate = true;
             }
             if i.key_pressed(egui::Key::F2) {
-                mmu.loadstate(rom_path);
-            }
-
-            // Dump save every 10 seconds
-            if cart.battery_support {
-                let now = Instant::now();
-                if now > self.autosave_timer {
-                    mmu.saveram(rom_path, cart);
-                }
+                do_loadstate = true;
             }
         });
+
+        if do_savetate {
+            gb.savestate(rom_path);
+        }
+        if do_loadstate {
+            gb.loadstate(rom_path);
+        }
+
+        if autosave_due {
+            gb.mmu.saveram(rom_path, &gb.cart);
+        }
 
         ui.ctx().request_repaint();
     }

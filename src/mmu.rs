@@ -1,11 +1,13 @@
 use crate::cart::Cart;
 use crate::joypad::Joypad;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[derive(Serialize, Deserialize)]
 pub struct MMU {
     pub ram: Vec<u8>,
 }
@@ -57,36 +59,6 @@ impl MMU {
             let val = self.read_byte(source + i, cart, joypad);
             let dest = 0xFE00 as u16 + i;
             self.ram[dest as usize] = val;
-        }
-    }
-
-    pub fn savestate(&self, rom_path: &String) {
-        // dump the MMU to a file
-        // MMU: dump everything from 0x8000 to 0xFFFF
-        let rom_path = Path::new(rom_path);
-        let mut savestate_path = PathBuf::from(rom_path);
-        savestate_path.set_extension("st");
-        println!("Savestate saved: {}", savestate_path.display());
-
-        fs::write(&savestate_path, &self.ram[0x8000..0x10000]).unwrap();
-        // println!("Savestate written to {}", savestate_path);
-    }
-
-    pub fn loadstate(&mut self, rom_path: &String) {
-        let rom_path = Path::new(rom_path);
-        let mut savestate_path = PathBuf::from(rom_path);
-        savestate_path.set_extension("st");
-        println!("Savestate loaded: {}", savestate_path.display());
-
-        let mut savestate_file =
-            File::open(savestate_path).expect("Failed to open save state file");
-        let mut buffer = vec![0; 0x10000 - 0x8000];
-        savestate_file
-            .read_exact(&mut buffer)
-            .expect("Failed to read the expected amount of bytes");
-
-        for (i, &byte) in buffer.iter().enumerate() {
-            self.ram[0x8000 + i] = byte;
         }
     }
 

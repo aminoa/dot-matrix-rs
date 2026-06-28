@@ -1,12 +1,15 @@
 use crate::consts::{RAM_BANK_SIZE, RAM_START_ADDR, ROM_BANK_SIZE};
 use chrono::{Date, DateTime, Local, Timelike};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 enum MBC {
     None,
     MBC1,
     MBC3,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum ClockCounterRegisters {
     None,
     RTCS,
@@ -16,6 +19,7 @@ pub enum ClockCounterRegisters {
     RTCDH,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct RTC {
     pub selected_reg: ClockCounterRegisters,
     pub latched: bool,
@@ -28,7 +32,9 @@ pub struct RTC {
     pub start_date: DateTime<Local>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Cart {
+    #[serde(skip, default)]
     pub rom: Vec<u8>,
     pub title: String,
     pub cartridge_type: u8,

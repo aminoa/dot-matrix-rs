@@ -2,6 +2,7 @@ use crate::cart::Cart;
 use crate::consts::{CB_OPCODES, OPCODES};
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
+use serde::{Deserialize, Serialize};
 
 pub const CPU_CLOCK_SPEED: u32 = 4_194_304;
 pub const DIVIDER_CLOCK_SPEED: u32 = 16_384;
@@ -54,6 +55,7 @@ macro_rules! register_access {
     };
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CPU {
     pub a: u8,
     pub f: u8,

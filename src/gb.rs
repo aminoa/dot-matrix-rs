@@ -7,6 +7,8 @@ use crate::mmu::MMU;
 use crate::ppu::PPU;
 use std::cell::RefCell;
 use std::fs;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
 
 pub struct GB {
     pub apu: APU,
@@ -59,5 +61,43 @@ impl GB {
             print!("{}", self.mmu.read_byte(0xFF01, &self.cart, &self.joypad) as char);
             self.mmu.write_byte(0xFF02, 0, &mut self.cart, &mut self.joypad);
         }
+    }
+
+    pub fn savestate(&self, rom_path: &String) {
+        let mut path = PathBuf::from(Path::new(rom_path));
+        path.set_extension("st");
+
+        let mut bytes = Vec::new();
+        bincode::serialize_into(&mut bytes, &self.cpu).expect("serialize cpu");
+        bincode::serialize_into(&mut bytes, &self.ppu).expect("serialize ppu");
+        bincode::serialize_into(&mut bytes, &self.mmu).expect("serialize mmu");
+        bincode::serialize_into(&mut bytes, &self.cart).expect("serialize cart");
+
+        fs::write(&path, &bytes).expect("Failed to write savestate file");
+        println!("Savestate saved: {}", path.display());
+    }
+
+    pub fn loadstate(&mut self, rom_path: &String) {
+        let mut path = PathBuf::from(Path::new(rom_path));
+        path.set_extension("st");
+
+        let bytes = match fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("Savestate load failed ({}): {}", path.display(), e);
+                return;
+            }
+        };
+        let mut cursor = Cursor::new(bytes);
+
+        self.cpu = bincode::deserialize_from(&mut cursor).expect("deserialize cpu");
+        self.ppu = bincode::deserialize_from(&mut cursor).expect("deserialize ppu");
+        self.mmu = bincode::deserialize_from(&mut cursor).expect("deserialize mmu");
+
+        let rom = std::mem::take(&mut self.cart.rom);
+        self.cart = bincode::deserialize_from(&mut cursor).expect("deserialize cart");
+        self.cart.rom = rom;
+
+        println!("Savestate loaded: {}", path.display());
     }
 }

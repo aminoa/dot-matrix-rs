@@ -57,14 +57,7 @@ impl eframe::App for App {
             self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
         }
 
-        self.renderer.update(
-            ui,
-            &mut self.gb.mmu,
-            &mut self.gb.ppu,
-            &mut self.gb.joypad,
-            &mut self.gb.cart,
-            &self.rom_path,
-        );
+        self.renderer.update(ui, &mut self.gb, &self.rom_path);
         if self.enable_debug {
             debugger::show(ui.ctx(), &self.gb.cpu);
         }

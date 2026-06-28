@@ -4,8 +4,12 @@ use crate::cpu::{InterruptBit, CPU};
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
 use crate::ppu::PPUMemory::LY;
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
+#[derive(Serialize, Deserialize)]
 pub struct PPU {
+    #[serde(with = "BigArray")]
     pub framebuffer: [u8; 144 * 160],
     pub current_mode: PPUMode,
     pub current_cycles: u32,
@@ -28,7 +32,7 @@ pub enum PPUMemory {
     WX = 0xFF4B, //window
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum PPUMode {
     HBlank = 0,
     VBlank = 1,
