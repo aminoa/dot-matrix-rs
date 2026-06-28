@@ -1,3 +1,16 @@
+use eframe::wgpu::naga::valid::FunctionError::LastCaseFallTrough;
+
+// R is RAM, B is Battery
+enum MBC {
+    None,
+    MBC1,
+    MBC1R,
+    MBC1RB,
+    MBC3,
+    MBC3R,
+    MBC3RB,
+}
+
 pub struct Cart {
     pub rom: Vec<u8>,
     pub title: String,
@@ -8,6 +21,8 @@ pub struct Cart {
     pub ram_size_bytes: usize,
     pub ram_enabled: bool,
     pub rom_bank_selected: u8,
+
+    pub cartridge_type_mbc: MBC,
 }
 
 impl Cart {
@@ -18,6 +33,17 @@ impl Cart {
                 .trim_end_matches('\0')
                 .to_string();
         let cartridge_type = rom[0x147];
+        let cartridge_type_mbc = match cartridge_type {
+            0x0 => MBC::None,
+            0x1 => MBC::MBC1,
+            0x2 => MBC::MBC1R,
+            0x3 => MBC::MBC1RB,
+            0x11 => MBC::MBC3,
+            0x12 => MBC::MBC3R,
+            0x13 => MBC::MBC3RB,
+            _ => MBC::None,
+        };
+
         let rom_size_code = rom[0x148];
         let ram_size_code = rom[0x149];
 
@@ -51,6 +77,7 @@ impl Cart {
             ram_size_bytes,
             ram_enabled: false,
             rom_bank_selected: 1,
+            cartridge_type_mbc: cartridge_type_mbc,
         }
     }
 
@@ -64,6 +91,10 @@ impl Cart {
             }
             _ => panic!("Address out of ROM range: {:04X}", addr),
         }
+    }
+
+    pub fn read_ram(&self, addr: u16) -> u8 {
+        return 0;
     }
 
     pub fn enable_ram(&mut self, value: u8) {
