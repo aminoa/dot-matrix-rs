@@ -8,7 +8,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 | --- | --- |
 | <img src="./screenshots/TETRIS.png" width="300"> | <img src="./screenshots/ZELDA.png" width="300"> |
 | <img src="./screenshots/METROID2.png" width="300"> | <img src="./screenshots/DR. MARIO.png" width="300"> |
-| <img src="./screenshots/SUPER MARIOLAND.png" width="300"> | <img src="./screenshots/CPU_INSTRS.png" width="300"> |
+| <img src="./screenshots/SUPER MARIOLAND.png" width="300"> 
 
 ## Implementation Differences from dot-matrix (C++)
 
@@ -21,7 +21,9 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 
 ## Test ROMs
 
-
+| Screenshots | |
+| --- | --- |
+| <img src="./screenshots/CPU_INSTRS.png" width="300"> | <img src="./screenshots/DMG_ACID2.png" width="300"> | 
 
 ## Credits:
 

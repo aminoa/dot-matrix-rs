@@ -102,6 +102,8 @@ impl PPU {
         if lcdc & (1 << LCDCBits::LCDDisplayEnable as u8) == 0 {
             mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad);
             self.current_cycles = 0;
+            self.current_mode = PPUMode::OAM;
+            self.stat_line = false;
             return;
         }
 
