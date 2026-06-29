@@ -8,22 +8,22 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 | --- | --- |
 | <img src="./screenshots/TETRIS.png" width="300"> | <img src="./screenshots/ZELDA.png" width="300"> |
 | <img src="./screenshots/METROID2.png" width="300"> | <img src="./screenshots/DR. MARIO.png" width="300"> |
-| <img src="./screenshots/SUPER MARIOLAND.png" width="300"> 
-
-## Implementation Differences from dot-matrix (C++)
-
-- Timing (both the clock and timers) is properly emulated
-- PPU background rendering is more accurate and window/object rendering has been added
-- Joypad inputs
-- Memory banking (WIP)
-- Savestates (F1/F2)
-- APU (WIP)
+| <img src="./screenshots/SUPER MARIOLAND.png" width="300"> | <img src="./screenshots/POKEMON_RED.png" width="300"> |
 
 ## Test ROMs
 
 | Screenshots | |
 | --- | --- |
 | <img src="./screenshots/CPU_INSTRS.png" width="300"> | <img src="./screenshots/DMG_ACID2.png" width="300"> | 
+
+## Implementation Differences from dot-matrix (C++)
+
+- Timing (both the clock and timers) is properly emulated
+- Accurate PPU rendering 
+- Joypad inputs
+- Memory banking (MBC1/MBC3)
+- Savestates
+- APU (TODO)
 
 ## Credits:
 
