@@ -5,7 +5,6 @@ use crate::cpu::CPU;
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
 use crate::ppu::PPU;
-use std::cell::RefCell;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
