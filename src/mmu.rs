@@ -1,4 +1,5 @@
 use crate::cart::Cart;
+use crate::consts::DMG0_IO_INIT;
 use crate::joypad::Joypad;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -15,8 +16,9 @@ pub struct MMU {
 impl MMU {
     pub fn new() -> MMU {
         let mut ram = vec![0; 0x10000];
-        ram[0xFF00] = 0xCF; // Initialize joypad register with default value (all buttons released)
-
+        for &(addr, val) in DMG0_IO_INIT {
+            ram[addr as usize] = val;
+        }
         return MMU { ram };
     }
 
@@ -26,7 +28,6 @@ impl MMU {
             0xA000..0xBFFF => cart.read_ram(addr), // if this exists
             0xFF00 => joypad.read(),
             0xFF01 => 0xFF, // Dummy value for serial data register
-            // 0xFF10..0xFF26 => apu.read_register(addr),
             _ => self.ram[addr as usize],
         }
     }

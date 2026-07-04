@@ -56,11 +56,6 @@ impl GB {
         self.apu.update();
 
         self.current_cycles += instruction_cycles as u32;
-
-        if self.mmu.read_byte(0xFF02, &self.cart, &self.joypad) == 0x81 {
-            print!("{}", self.mmu.read_byte(0xFF01, &self.cart, &self.joypad) as char);
-            self.mmu.write_byte(0xFF02, 0, &mut self.cart, &mut self.joypad);
-        }
     }
 
     pub fn savestate(&self, rom_path: &String) {

@@ -1,5 +1,7 @@
 .vscode
 .claude
+.zed
+.idea
 .DS_Store
 /target
 utilities
