@@ -1,3 +1,4 @@
+use crate::apu::APU;
 use crate::cart::Cart;
 use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::cpu::{InterruptBit, CPU};
@@ -94,20 +95,21 @@ impl PPU {
         cpu: &mut CPU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
-        let scanline = mmu.read_byte(PPUMemory::LY as u16, cart, joypad);
-        let stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad);
-        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+        let scanline = mmu.read_byte(PPUMemory::LY as u16, cart, joypad, apu);
+        let stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad, apu);
+        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
 
         if lcdc & (1 << LCDCBits::LCDDisplayEnable as u8) == 0 {
-            mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad);
+            mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad, apu);
             self.current_cycles = 0;
             self.current_mode = PPUMode::OAM;
             self.stat_line = false;
             return;
         }
 
-        self.update_stat(scanline, mmu, cpu, cart, joypad);
+        self.update_stat(scanline, mmu, cpu, cart, joypad, apu);
 
         self.current_cycles += cycles;
 
@@ -117,7 +119,7 @@ impl PPU {
                 if self.current_cycles > 80 {
                     self.current_cycles -= 80;
                     self.current_mode = PPUMode::VRAM;
-                    self.update_stat(scanline, mmu, cpu, cart, joypad);
+                    self.update_stat(scanline, mmu, cpu, cart, joypad, apu);
                 }
             }
             // Mode 3
@@ -125,21 +127,21 @@ impl PPU {
                 if self.current_cycles > 172 {
                     self.current_cycles -= 172;
                     self.current_mode = PPUMode::HBlank;
-                    self.draw_scanline(scanline, mmu, cart, joypad);
+                    self.draw_scanline(scanline, mmu, cart, joypad, apu);
                 }
             }
             // Mode 0
             PPUMode::HBlank => {
                 if self.current_cycles > 204 {
-                    self.update_stat(scanline, mmu, cpu, cart, joypad);
+                    self.update_stat(scanline, mmu, cpu, cart, joypad, apu);
                     self.current_cycles -= 204;
                     if scanline == SCREEN_HEIGHT as u8 - 1 {
-                        cpu.request_interrupt(InterruptBit::VBlank, mmu, cart, joypad);
-                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad);
+                        cpu.request_interrupt(InterruptBit::VBlank, mmu, cart, joypad, apu);
+                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad, apu);
                         self.current_mode = PPUMode::VBlank;
                         self.window_line_counter = 0;
                     } else {
-                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad);
+                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad, apu);
                         self.current_mode = PPUMode::OAM;
                     }
                 }
@@ -148,13 +150,13 @@ impl PPU {
             PPUMode::VBlank => {
                 if self.current_cycles > 456 {
                     if scanline == SCREEN_HEIGHT as u8 + 9 {
-                        mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad);
+                        mmu.write_byte(PPUMemory::LY as u16, 0, cart, joypad, apu);
                         self.current_mode = PPUMode::OAM;
                     } else {
-                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad);
+                        mmu.write_byte(PPUMemory::LY as u16, scanline + 1, cart, joypad, apu);
                     }
 
-                    self.update_stat(scanline, mmu, cpu, cart, joypad);
+                    self.update_stat(scanline, mmu, cpu, cart, joypad, apu);
                     self.current_cycles -= 456;
                 }
             }
@@ -168,12 +170,13 @@ impl PPU {
         cpu: &mut CPU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
-        let mut stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad);
+        let mut stat = mmu.read_byte(PPUMemory::STAT as u16, cart, joypad, apu);
 
         // Update read-only stat information
         // LYC = LY, bit 2 check
-        let lyc = mmu.read_byte(PPUMemory::LYC as u16, cart, joypad);
+        let lyc = mmu.read_byte(PPUMemory::LYC as u16, cart, joypad, apu);
         if scanline == lyc {
             stat |= 1 << LCDStatBits::LYCEqualsLY as u8;
             // if (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0 {
@@ -186,7 +189,7 @@ impl PPU {
         // bit 1 set
         stat &= !0b11; // Clear mode bits
         stat |= self.current_mode.clone() as u8;
-        mmu.write_byte(PPUMemory::STAT as u16, stat, cart, joypad);
+        mmu.write_byte(PPUMemory::STAT as u16, stat, cart, joypad, apu);
         let current_stat_line = (mode == PPUMode::HBlank as u8
             && (stat & (1 << LCDStatBits::Mode0IntSelect as u8)) != 0)
             || (mode == PPUMode::VBlank as u8
@@ -196,7 +199,7 @@ impl PPU {
             || (scanline == lyc && (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0);
 
         if !self.stat_line && current_stat_line {
-            cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad);
+            cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad, apu);
         }
 
         self.stat_line = current_stat_line;
@@ -208,22 +211,23 @@ impl PPU {
         mmu: &mut MMU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
-        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
 
         if (lcdc & (1 << LCDCBits::LCDDisplayEnable as u8)) == 0 {
             return;
         }
 
         if (lcdc & (1 << LCDCBits::BackgroundWindowEnable as u8)) != 0 {
-            self.draw_background_scanline(scanline, mmu, cart, joypad);
+            self.draw_background_scanline(scanline, mmu, cart, joypad, apu);
         }
         if (lcdc & (1 << LCDCBits::WindowDisplayEnable as u8)) != 0 {
-            self.draw_window_scanline(scanline, mmu, cart, joypad);
+            self.draw_window_scanline(scanline, mmu, cart, joypad, apu);
         }
 
         if (lcdc & (1 << LCDCBits::ObjectDisplayEnable as u8)) != 0 {
-            self.draw_sprites_scanline(scanline, mmu, cart, joypad);
+            self.draw_sprites_scanline(scanline, mmu, cart, joypad, apu);
         }
     }
 
@@ -233,10 +237,11 @@ impl PPU {
         mmu: &mut MMU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
         for x in 0..SCREEN_WIDTH as u16 {
             // getting tile map and data base
-            let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+            let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
 
             let tile_map_base_bit = (lcdc >> LCDCBits::BackgroundTileMapArea as u8) & 1;
 
@@ -248,8 +253,8 @@ impl PPU {
             let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
 
             // 32 tiles per row so going down one row requires * 32, / 8 because each tile is 8 * 8 px
-            let scx = mmu.read_byte(PPUMemory::SCX as u16, cart, joypad);
-            let scy = mmu.read_byte(PPUMemory::SCY as u16, cart, joypad);
+            let scx = mmu.read_byte(PPUMemory::SCX as u16, cart, joypad, apu);
+            let scy = mmu.read_byte(PPUMemory::SCY as u16, cart, joypad, apu);
             let background_x = x.wrapping_add(scx as u16) % 256;
             let background_y = scanline.wrapping_add(scy) as u16 % 256;
 
@@ -257,7 +262,7 @@ impl PPU {
             let tile_map_col_offset = (background_x / 8) as u16;
 
             let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
-            let tile_index = mmu.read_byte(tile_map_base + tile_map_offset, cart, joypad);
+            let tile_index = mmu.read_byte(tile_map_base + tile_map_offset, cart, joypad, apu);
 
             // 8800 + (127 + 128) * 16 = 97F0 (can grab the last 2 bytes of memory for tile data)
             // 8800 + (-128 + 128) * 16 = 8800
@@ -274,9 +279,9 @@ impl PPU {
             // Ex. 8000 + (2F * 0x10) = 82F0
             // Get the two bytes for the line (there are 16 bytes per tile, 2 bytes per line)
             let tile_data_byte_1 =
-                mmu.read_byte(tile_data_address + (tile_data_line * 2), cart, joypad);
+                mmu.read_byte(tile_data_address + (tile_data_line * 2), cart, joypad, apu);
             let tile_data_byte_2 =
-                mmu.read_byte(tile_data_address + (tile_data_line * 2 + 1), cart, joypad);
+                mmu.read_byte(tile_data_address + (tile_data_line * 2 + 1), cart, joypad, apu);
 
             // Get the two bits for the pixel within the line (that's why x is used), bits go from 7 - 0
             let tile_data_byte_index = 7 - (background_x % 8);
@@ -285,7 +290,7 @@ impl PPU {
 
             // originally called tile_data_bit_color, values from 0 - 3
             let color_index = (tile_data_bit_2 << 1) | tile_data_bit_1;
-            let palette = mmu.read_byte(PPUMemory::BGP as u16, cart, joypad);
+            let palette = mmu.read_byte(PPUMemory::BGP as u16, cart, joypad, apu);
 
             let color = match (palette >> (color_index * 2)) & 0b11 {
                 0 => COLOR_WHITE,
@@ -305,9 +310,10 @@ impl PPU {
         mmu: &mut MMU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
-        let wx = mmu.read_byte(PPUMemory::WX as u16, cart, joypad);
-        let wy = mmu.read_byte(PPUMemory::WY as u16, cart, joypad);
+        let wx = mmu.read_byte(PPUMemory::WX as u16, cart, joypad, apu);
+        let wy = mmu.read_byte(PPUMemory::WY as u16, cart, joypad, apu);
 
         if scanline < wy || wx >= 166 {
             return;
@@ -321,7 +327,7 @@ impl PPU {
                 continue;
             }
 
-            let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+            let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
             let tile_map_base_bit = (lcdc >> LCDCBits::WindowTileMapDisplaySelect as u8) & 1;
 
             let tile_map_base: u16 = if tile_map_base_bit == 0 { 0x9800 } else { 0x9C00 };
@@ -336,7 +342,7 @@ impl PPU {
             let tile_map_col_offset = (window_x as u16 / 8) as u16;
 
             let tile_map_offset: u16 = tile_map_row_offset + tile_map_col_offset;
-            let tile_index = mmu.read_byte(tile_map_base + tile_map_offset, cart, joypad);
+            let tile_index = mmu.read_byte(tile_map_base + tile_map_offset, cart, joypad, apu);
 
             let tile_data_address: u16 = if tile_data_base == 0x8000 {
                 tile_data_base + (tile_index as u16 * 16)
@@ -348,16 +354,16 @@ impl PPU {
             let tile_data_line = (window_y % 8) as u16; //within the tile, the line looked at
 
             let tile_data_byte_1 =
-                mmu.read_byte(tile_data_address + (tile_data_line * 2), cart, joypad);
+                mmu.read_byte(tile_data_address + (tile_data_line * 2), cart, joypad, apu);
             let tile_data_byte_2 =
-                mmu.read_byte(tile_data_address + (tile_data_line * 2 + 1), cart, joypad);
+                mmu.read_byte(tile_data_address + (tile_data_line * 2 + 1), cart, joypad, apu);
 
             let tile_data_byte_index = 7 - (window_x % 8);
             let tile_data_bit_1 = (tile_data_byte_1 >> tile_data_byte_index) & 1;
             let tile_data_bit_2 = (tile_data_byte_2 >> tile_data_byte_index) & 1;
 
             let color_index = (tile_data_bit_2 << 1) | tile_data_bit_1;
-            let palette = mmu.read_byte(PPUMemory::BGP as u16, cart, joypad);
+            let palette = mmu.read_byte(PPUMemory::BGP as u16, cart, joypad, apu);
 
             let color = match (palette >> (color_index * 2)) & 0b11 {
                 0 => COLOR_WHITE,
@@ -377,8 +383,9 @@ impl PPU {
         mmu: &mut MMU,
         cart: &mut Cart,
         joypad: &mut Joypad,
+        apu: &mut APU,
     ) {
-        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad);
+        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
         let sprite_size_bit = (lcdc >> LCDCBits::ObjectSize as u8) & 1;
         let sprite_height: u8 = if sprite_size_bit == 0 { 8 } else { 16 };
         let mut visible_sprites: Vec<(i16, i16, u8, u8, u8)> = Vec::with_capacity(10);
@@ -390,10 +397,10 @@ impl PPU {
             // each sprite is 4 bytes in OAM
             let oam_addr = oam_base + sprite_index * 4;
 
-            let sprite_y = mmu.read_byte(oam_addr, cart, joypad) as i16 - 16;
-            let sprite_x = mmu.read_byte(oam_addr + 1, cart, joypad) as i16 - 8;
-            let tile_index = mmu.read_byte(oam_addr + 2, cart, joypad);
-            let attributes = mmu.read_byte(oam_addr + 3, cart, joypad);
+            let sprite_y = mmu.read_byte(oam_addr, cart, joypad, apu) as i16 - 16;
+            let sprite_x = mmu.read_byte(oam_addr + 1, cart, joypad, apu) as i16 - 8;
+            let tile_index = mmu.read_byte(oam_addr + 2, cart, joypad, apu);
+            let attributes = mmu.read_byte(oam_addr + 3, cart, joypad, apu);
 
             if sprite_y <= (scanline as i16) && (scanline as i16) < sprite_y + sprite_height as i16
             {
@@ -451,8 +458,8 @@ impl PPU {
 
             let tile_data_line = (sprite_line as u16) % 8;
 
-            let byte1 = mmu.read_byte(tile_data_address + tile_data_line * 2, cart, joypad);
-            let byte2 = mmu.read_byte(tile_data_address + tile_data_line * 2 + 1, cart, joypad);
+            let byte1 = mmu.read_byte(tile_data_address + tile_data_line * 2, cart, joypad, apu);
+            let byte2 = mmu.read_byte(tile_data_address + tile_data_line * 2 + 1, cart, joypad, apu);
 
             for pixel in 0u8..8u8 {
                 let bit_index_u8 = if x_flip { pixel } else { 7u8 - pixel };
@@ -466,7 +473,7 @@ impl PPU {
                     continue;
                 }
                 let palette =
-                    mmu.read_byte(PPUMemory::OBP0 as u16 + palette_select as u16, cart, joypad);
+                    mmu.read_byte(PPUMemory::OBP0 as u16 + palette_select as u16, cart, joypad, apu);
 
                 let color = match (palette >> (color_index * 2)) & 0b11 {
                     0 => COLOR_WHITE,

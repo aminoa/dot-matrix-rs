@@ -1,3 +1,4 @@
+use crate::apu::APU;
 use crate::cart::Cart;
 use crate::consts::DMG0_IO_INIT;
 use crate::joypad::Joypad;
@@ -22,42 +23,64 @@ impl MMU {
         return MMU { ram };
     }
 
-    pub fn read_byte(&self, addr: u16, cart: &Cart, joypad: &Joypad) -> u8 {
+    pub fn read_byte(&self, addr: u16, cart: &Cart, joypad: &Joypad, apu: &mut APU) -> u8 {
         match addr {
             0x0..=0x7FFF => cart.read_rom(addr),
             0xA000..0xBFFF => cart.read_ram(addr), // if this exists
             0xFF00 => joypad.read(),
+            0xFF10..=0xFF3F => apu.read_register(addr),
             0xFF01 => 0xFF, // Dummy value for serial data register
             _ => self.ram[addr as usize],
         }
     }
 
-    pub fn write_byte(&mut self, addr: u16, val: u8, cart: &mut Cart, joypad: &mut Joypad) {
+    pub fn write_byte(
+        &mut self,
+        addr: u16,
+        val: u8,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+        apu: &mut APU,
+    ) {
         match addr {
             0x0000..0x7FFF => cart.write_rom(addr, val),
             0xA000..0xBFFF => cart.write_ram(addr, val),
             0xFF00 => joypad.write(val),
-            0xFF46 => self.oam_dma_transfer(val, cart, joypad),
+            0xFF10..0xFF3F => apu.write_register(addr, val),
+            0xFF46 => self.oam_dma_transfer(val, cart, joypad, apu),
             _ => self.ram[addr as usize] = val,
         }
     }
 
-    pub fn read_short(&self, addr: u16, cart: &Cart, joypad: &Joypad) -> u16 {
-        (self.read_byte(addr, cart, joypad) as u16)
-            | ((self.read_byte(addr + 1, cart, joypad) as u16) << 8)
+    pub fn read_short(&self, addr: u16, cart: &Cart, joypad: &Joypad, apu: &mut APU) -> u16 {
+        (self.read_byte(addr, cart, joypad, apu) as u16)
+            | ((self.read_byte(addr + 1, cart, joypad, apu) as u16) << 8)
     }
 
-    pub fn write_short(&mut self, addr: u16, val: u16, cart: &mut Cart, joypad: &mut Joypad) {
-        self.write_byte(addr, (val & 0xFF) as u8, cart, joypad);
-        self.write_byte(addr + 1, (val >> 8) as u8, cart, joypad);
+    pub fn write_short(
+        &mut self,
+        addr: u16,
+        val: u16,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+        apu: &mut APU,
+    ) {
+        self.write_byte(addr, (val & 0xFF) as u8, cart, joypad, apu);
+        self.write_byte(addr + 1, (val >> 8) as u8, cart, joypad, apu);
     }
 
     // copy 160 bytes to OAM (0xFE00)
-    pub fn oam_dma_transfer(&mut self, source_high: u8, cart: &Cart, joypad: &Joypad) {
+    pub fn oam_dma_transfer(
+        &mut self,
+        source_high: u8,
+        cart: &Cart,
+        joypad: &Joypad,
+        apu: &mut APU,
+    ) {
         // convert XX to XX00
         let source = (source_high as u16) << 8;
         for i in 0x0 as u16..0xA0 as u16 {
-            let val = self.read_byte(source + i, cart, joypad);
+            let val = self.read_byte(source + i, cart, joypad, apu);
             let dest = 0xFE00 as u16 + i;
             self.ram[dest as usize] = val;
         }

@@ -34,16 +34,22 @@ impl GB {
     }
 
     pub fn step(&mut self) {
-        let instruction = self.mmu.read_byte(self.cpu.pc, &self.cart, &self.joypad);
+        let instruction = self.mmu.read_byte(self.cpu.pc, &self.cart, &self.joypad, &mut self.apu);
 
-        let instruction_cycles =
-            self.cpu.execute(instruction, &mut self.mmu, &mut self.cart, &mut self.joypad);
-        self.cpu.check_interrupts(&mut self.mmu, &mut self.cart, &mut self.joypad);
+        let instruction_cycles = self.cpu.execute(
+            instruction,
+            &mut self.mmu,
+            &mut self.cart,
+            &mut self.joypad,
+            &mut self.apu,
+        );
+        self.cpu.check_interrupts(&mut self.mmu, &mut self.cart, &mut self.joypad, &mut self.apu);
         self.cpu.update_timers(
             instruction_cycles as u32,
             &mut self.mmu,
             &mut self.cart,
             &mut self.joypad,
+            &mut self.apu,
         );
         self.ppu.update(
             instruction_cycles as u32,
@@ -51,8 +57,9 @@ impl GB {
             &mut self.cpu,
             &mut self.cart,
             &mut self.joypad,
+            &mut self.apu,
         );
-        self.apu.update();
+        self.apu.update(instruction_cycles as u32);
 
         self.current_cycles += instruction_cycles as u32;
     }

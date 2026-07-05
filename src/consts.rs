@@ -538,7 +538,7 @@ pub const ROM_BANK_SIZE: u32 = 0x4000; // 16384 bytes
 pub const RAM_BANK_SIZE: u16 = 0x2000; // 8192 bytes
 pub const RAM_START_ADDR: u16 = 0xA000;
 
-// DMG0 post boot ROM IO register state
+// DMG0 post boot ROM IO register state (ignoring audio)
 pub const DMG0_IO_INIT: &[(u16, u8)] = &[
     (0xFF00, 0xCF), // P1/JOYP
     (0xFF01, 0x00), // SB
@@ -548,6 +548,21 @@ pub const DMG0_IO_INIT: &[(u16, u8)] = &[
     (0xFF06, 0x00), // TMA
     (0xFF07, 0xF8), // TAC
     (0xFF0F, 0xE1), // IF
+    (0xFF40, 0x91), // LCDC
+    (0xFF41, 0x81), // STAT
+    (0xFF42, 0x00), // SCY
+    (0xFF43, 0x00), // SCX
+    (0xFF44, 0x91), // LY
+    (0xFF45, 0x00), // LYC
+    (0xFF46, 0xFF), // DMA
+    (0xFF47, 0xFC), // BGP
+    // OBP0/OBP1 ($FF48/$FF49) are uninitialized on real DMG0 hardware.
+    (0xFF4A, 0x00), // WY
+    (0xFF4B, 0x00), // WX
+    (0xFFFF, 0x00), // IE
+];
+
+pub const AUDIO_INIT: &[(u16, u8)] = &[
     (0xFF10, 0x80), // NR10
     (0xFF11, 0xBF), // NR11
     (0xFF12, 0xF3), // NR12
@@ -569,16 +584,42 @@ pub const DMG0_IO_INIT: &[(u16, u8)] = &[
     (0xFF24, 0x77), // NR50
     (0xFF25, 0xF3), // NR51
     (0xFF26, 0xF1), // NR52
-    (0xFF40, 0x91), // LCDC
-    (0xFF41, 0x81), // STAT
-    (0xFF42, 0x00), // SCY
-    (0xFF43, 0x00), // SCX
-    (0xFF44, 0x91), // LY
-    (0xFF45, 0x00), // LYC
-    (0xFF46, 0xFF), // DMA
-    (0xFF47, 0xFC), // BGP
-    // OBP0/OBP1 ($FF48/$FF49) are uninitialized on real DMG0 hardware.
-    (0xFF4A, 0x00), // WY
-    (0xFF4B, 0x00), // WX
-    (0xFFFF, 0x00), // IE
 ];
+
+// Channel 1 (square + sweep)
+pub const NR10: u16 = 0xFF10; // sweep
+pub const NR11: u16 = 0xFF11; // length + duty
+pub const NR12: u16 = 0xFF12; // envelope
+pub const NR13: u16 = 0xFF13; // freq lo
+pub const NR14: u16 = 0xFF14; // freq hi + trigger
+
+// Channel 2 (square)
+pub const NR21: u16 = 0xFF16; // length + duty
+pub const NR22: u16 = 0xFF17; // envelope
+pub const NR23: u16 = 0xFF18; // freq lo
+pub const NR24: u16 = 0xFF19; // freq hi + trigger
+
+// Channel 3 (wave)
+pub const NR30: u16 = 0xFF1A; // DAC power
+pub const NR31: u16 = 0xFF1B; // length
+pub const NR32: u16 = 0xFF1C; // volume shift
+pub const NR33: u16 = 0xFF1D; // freq lo
+pub const NR34: u16 = 0xFF1E; // freq hi + trigger
+
+// Channel 4 (noise)
+pub const NR41: u16 = 0xFF20; // length
+pub const NR42: u16 = 0xFF21; // envelope
+pub const NR43: u16 = 0xFF22; // polynomial counter
+pub const NR44: u16 = 0xFF23; // trigger
+
+// Control
+pub const NR50: u16 = 0xFF24; // volume L/R
+pub const NR51: u16 = 0xFF25; // panning
+pub const NR52: u16 = 0xFF26; // master enable + channel status
+
+pub const AUDIO_RAM_START: u16 = 0xFF10;
+pub const AUDIO_RAM_END: u16 = 0xFF26;
+
+// Wave RAM
+pub const WAVE_RAM_START: u16 = 0xFF30;
+pub const WAVE_RAM_END: u16 = 0xFF3F;
