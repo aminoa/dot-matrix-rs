@@ -81,7 +81,7 @@ impl PPU {
 
         PPU {
             framebuffer: framebuffer,
-            current_mode: PPUMode::OAM,
+            current_mode: PPUMode::VBlank,
             current_cycles: 0,
             stat_line: false,
             window_line_counter: 0,
@@ -459,7 +459,8 @@ impl PPU {
             let tile_data_line = (sprite_line as u16) % 8;
 
             let byte1 = mmu.read_byte(tile_data_address + tile_data_line * 2, cart, joypad, apu);
-            let byte2 = mmu.read_byte(tile_data_address + tile_data_line * 2 + 1, cart, joypad, apu);
+            let byte2 =
+                mmu.read_byte(tile_data_address + tile_data_line * 2 + 1, cart, joypad, apu);
 
             for pixel in 0u8..8u8 {
                 let bit_index_u8 = if x_flip { pixel } else { 7u8 - pixel };
@@ -472,8 +473,12 @@ impl PPU {
                 if color_index == 0 {
                     continue;
                 }
-                let palette =
-                    mmu.read_byte(PPUMemory::OBP0 as u16 + palette_select as u16, cart, joypad, apu);
+                let palette = mmu.read_byte(
+                    PPUMemory::OBP0 as u16 + palette_select as u16,
+                    cart,
+                    joypad,
+                    apu,
+                );
 
                 let color = match (palette >> (color_index * 2)) & 0b11 {
                     0 => COLOR_WHITE,
