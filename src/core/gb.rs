@@ -5,6 +5,7 @@ use crate::cpu::CPU;
 use crate::joypad::Joypad;
 use crate::mmu::MMU;
 use crate::ppu::PPU;
+use ringbuf::HeapProd;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -20,10 +21,10 @@ pub struct GB {
 }
 
 impl GB {
-    pub fn new(rom_path: &String) -> GB {
+    pub fn new(rom_path: &String, sink: HeapProd<f32>) -> GB {
         let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
         return GB {
-            apu: APU::new(),
+            apu: APU::new(sink),
             cpu: CPU::new(),
             mmu: MMU::new(),
             ppu: PPU::new(),

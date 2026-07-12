@@ -3,25 +3,31 @@ use std::time::{Duration, Instant};
 use eframe;
 use egui;
 
+use crate::audio::AudioRenderer;
 use crate::consts::{
     CYCLES_PER_FRAME, FRAME_INTERVAL, FRAME_RATE, SCALE_FACTOR, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
 use crate::gb::GB;
-use crate::renderer::Renderer;
+use crate::video::VideoRenderer;
 
 pub struct App {
     gb: GB,
     rom_path: String,
-    renderer: Renderer,
+    video_renderer: VideoRenderer,
+    audio_renderer: AudioRenderer,
     next_frame_at: Instant,
 }
 
 impl App {
     pub fn new(rom_path: String) -> Self {
+        let (audio_rendererer, producer) = AudioRenderer::new();
+        let mut gb = GB::new(&rom_path, producer);
+
         App {
-            gb: GB::new(&rom_path),
+            gb: gb,
             rom_path: rom_path,
-            renderer: Renderer::new(),
+            video_renderer: VideoRenderer::new(),
+            audio_renderer: audio_rendererer,
             next_frame_at: Instant::now() + FRAME_INTERVAL,
         }
     }
@@ -50,7 +56,7 @@ impl eframe::App for App {
             self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
         }
 
-        self.renderer.update(ui, &mut self.gb, &self.rom_path);
+        self.video_renderer.update(ui, &mut self.gb, &self.rom_path);
     }
 
     fn on_exit(&mut self) {

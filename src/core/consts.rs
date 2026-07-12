@@ -619,6 +619,7 @@ pub const NR52: u16 = 0xFF26; // master enable + channel status
 
 pub const AUDIO_RAM_START: u16 = 0xFF10;
 pub const AUDIO_RAM_END: u16 = 0xFF26;
+pub const AUDIO_RAM_NR52: u16 = 0xFF26;
 
 // Wave RAM
 pub const WAVE_RAM_START: u16 = 0xFF30;

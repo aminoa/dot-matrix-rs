@@ -1,13 +1,26 @@
 mod app;
+
+#[path = "core/apu.rs"]
 mod apu;
+#[path = "renderer/audio.rs"]
+mod audio; // your cpal glue
+#[path = "core/cart.rs"]
 mod cart;
+#[path = "core/consts.rs"]
 mod consts;
+#[path = "core/cpu.rs"]
 mod cpu;
-mod gb;
+#[path = "core/gb.rs"]
+mod gb; // exposes crate::gb::GB
+#[path = "core/joypad.rs"]
 mod joypad;
+#[path = "core/mmu.rs"]
 mod mmu;
+#[path = "core/ppu.rs"]
 mod ppu;
-mod renderer;
+
+#[path = "renderer/video.rs"]
+mod video; // exposes crate::renderer::Renderer
 
 use clap::Parser;
 
