@@ -239,22 +239,19 @@ impl PPU {
         joypad: &mut Joypad,
         apu: &mut APU,
     ) {
+        let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
+
+        // getting tile map and data base
+        let tile_map_base_bit = (lcdc >> LCDCBits::BackgroundTileMapArea as u8) & 1;
+        let tile_map_base: u16 = if tile_map_base_bit == 0 { 0x9800 } else { 0x9C00 };
+        let tile_data_base_bit = (lcdc >> LCDCBits::BackgroundAndWindowTileDataSelect as u8) & 1;
+        let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
+
+        let scx = mmu.read_byte(PPUMemory::SCX as u16, cart, joypad, apu);
+        let scy = mmu.read_byte(PPUMemory::SCY as u16, cart, joypad, apu);
+
         for x in 0..SCREEN_WIDTH as u16 {
-            // getting tile map and data base
-            let lcdc = mmu.read_byte(PPUMemory::LCDC as u16, cart, joypad, apu);
-
-            let tile_map_base_bit = (lcdc >> LCDCBits::BackgroundTileMapArea as u8) & 1;
-
-            let tile_map_base: u16 = if tile_map_base_bit == 0 { 0x9800 } else { 0x9C00 };
-
-            let tile_data_base_bit =
-                (lcdc >> LCDCBits::BackgroundAndWindowTileDataSelect as u8) & 1;
-
-            let tile_data_base: u16 = if tile_data_base_bit == 0 { 0x8800 } else { 0x8000 };
-
             // 32 tiles per row so going down one row requires * 32, / 8 because each tile is 8 * 8 px
-            let scx = mmu.read_byte(PPUMemory::SCX as u16, cart, joypad, apu);
-            let scy = mmu.read_byte(PPUMemory::SCY as u16, cart, joypad, apu);
             let background_x = x.wrapping_add(scx as u16) % 256;
             let background_y = scanline.wrapping_add(scy) as u16 % 256;
 

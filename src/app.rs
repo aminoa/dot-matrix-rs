@@ -16,12 +16,13 @@ pub struct App {
     video_renderer: VideoRenderer,
     audio_renderer: AudioRenderer,
     next_frame_at: Instant,
+    turbo: bool,
 }
 
 impl App {
-    pub fn new(rom_path: String) -> Self {
+    pub fn new(rom_path: String, turbo: bool) -> Self {
         let (audio_rendererer, producer) = AudioRenderer::new();
-        let mut gb = GB::new(&rom_path, producer);
+        let gb = GB::new(&rom_path, producer, audio_rendererer.sample_rate);
 
         App {
             gb: gb,
@@ -29,11 +30,12 @@ impl App {
             video_renderer: VideoRenderer::new(),
             audio_renderer: audio_rendererer,
             next_frame_at: Instant::now() + FRAME_INTERVAL,
+            turbo: turbo,
         }
     }
 }
 
-pub fn run(rom_path: String) -> eframe::Result<()> {
+pub fn run(rom_path: String, turbo: bool) -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("Dot Matrix").with_inner_size([
             (SCREEN_WIDTH * SCALE_FACTOR) as f32,
@@ -42,17 +44,23 @@ pub fn run(rom_path: String) -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native("Dot Matrix", native_options, Box::new(|_| Ok(Box::new(App::new(rom_path)))))
+    eframe::run_native(
+        "Dot Matrix",
+        native_options,
+        Box::new(|_| Ok(Box::new(App::new(rom_path, turbo)))),
+    )
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let target_rate = if !self.turbo { CYCLES_PER_FRAME } else { CYCLES_PER_FRAME * 20 };
+
         let now = Instant::now();
         if now >= self.next_frame_at {
-            while self.gb.current_cycles < CYCLES_PER_FRAME {
+            while self.gb.current_cycles < target_rate {
                 self.gb.step();
             }
-            self.gb.current_cycles -= CYCLES_PER_FRAME;
+            self.gb.current_cycles -= target_rate;
             self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
         }
 

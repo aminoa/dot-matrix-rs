@@ -3,7 +3,7 @@ mod app;
 #[path = "core/apu.rs"]
 mod apu;
 #[path = "renderer/audio.rs"]
-mod audio; // your cpal glue
+mod audio;
 #[path = "core/cart.rs"]
 mod cart;
 #[path = "core/consts.rs"]
@@ -11,7 +11,7 @@ mod consts;
 #[path = "core/cpu.rs"]
 mod cpu;
 #[path = "core/gb.rs"]
-mod gb; // exposes crate::gb::GB
+mod gb;
 #[path = "core/joypad.rs"]
 mod joypad;
 #[path = "core/mmu.rs"]
@@ -20,7 +20,7 @@ mod mmu;
 mod ppu;
 
 #[path = "renderer/video.rs"]
-mod video; // exposes crate::renderer::Renderer
+mod video;
 
 use clap::Parser;
 
@@ -31,12 +31,13 @@ struct Cli {
     rom: String,
 
     #[arg(long)]
-    enable_debug: bool,
+    turbo: bool,
 }
 
 fn main() {
     let cli = Cli::parse();
     let rom_path = cli.rom;
+    let turbo = cli.turbo;
 
-    app::run(rom_path).expect("eframe failed to launch");
+    app::run(rom_path, turbo).expect("eframe failed to launch");
 }

@@ -528,8 +528,8 @@ pub const CB_OPCODES: &[Opcode] = &[
 pub const CLOCK_SPEED: u32 = 4_194_304; // 4.194304 MHz
 pub const FRAME_RATE: f32 = 59.72746; // 59.72746 Hz
 pub const CYCLES_PER_FRAME: u32 = (CLOCK_SPEED as f32 / FRAME_RATE) as u32; // ~69905 cycles per frame
-pub const FRAME_INTERVAL: Duration = Duration::from_millis(1000 / FRAME_RATE as u64);
 
+pub const FRAME_INTERVAL: Duration = Duration::from_nanos((1_000_000_000.0 / FRAME_RATE) as u64);
 pub const SCREEN_WIDTH: u32 = 160;
 pub const SCREEN_HEIGHT: u32 = 144;
 pub const SCALE_FACTOR: u32 = 3;
@@ -586,41 +586,45 @@ pub const AUDIO_INIT: &[(u16, u8)] = &[
     (0xFF26, 0xF1), // NR52
 ];
 
-// Channel 1 (square + sweep)
-pub const NR10: u16 = 0xFF10; // sweep
-pub const NR11: u16 = 0xFF11; // length + duty
-pub const NR12: u16 = 0xFF12; // envelope
-pub const NR13: u16 = 0xFF13; // freq lo
-pub const NR14: u16 = 0xFF14; // freq hi + trigger
+pub struct APU_RAM;
 
-// Channel 2 (square)
-pub const NR21: u16 = 0xFF16; // length + duty
-pub const NR22: u16 = 0xFF17; // envelope
-pub const NR23: u16 = 0xFF18; // freq lo
-pub const NR24: u16 = 0xFF19; // freq hi + trigger
+impl APU_RAM {
+    // Channel 1 (square + sweep)
+    pub const NR10: u16 = 0xFF10; // sweep
+    pub const NR11: u16 = 0xFF11; // length + duty
+    pub const NR12: u16 = 0xFF12; // envelope
+    pub const NR13: u16 = 0xFF13; // freq lo
+    pub const NR14: u16 = 0xFF14; // freq hi + trigger
 
-// Channel 3 (wave)
-pub const NR30: u16 = 0xFF1A; // DAC power
-pub const NR31: u16 = 0xFF1B; // length
-pub const NR32: u16 = 0xFF1C; // volume shift
-pub const NR33: u16 = 0xFF1D; // freq lo
-pub const NR34: u16 = 0xFF1E; // freq hi + trigger
+    // Channel 2 (square)
+    pub const NR21: u16 = 0xFF16; // length + duty
+    pub const NR22: u16 = 0xFF17; // envelope
+    pub const NR23: u16 = 0xFF18; // freq lo
+    pub const NR24: u16 = 0xFF19; // freq hi + trigger
 
-// Channel 4 (noise)
-pub const NR41: u16 = 0xFF20; // length
-pub const NR42: u16 = 0xFF21; // envelope
-pub const NR43: u16 = 0xFF22; // polynomial counter
-pub const NR44: u16 = 0xFF23; // trigger
+    // Channel 3 (wave)
+    pub const NR30: u16 = 0xFF1A; // DAC power
+    pub const NR31: u16 = 0xFF1B; // length
+    pub const NR32: u16 = 0xFF1C; // volume shift
+    pub const NR33: u16 = 0xFF1D; // freq lo
+    pub const NR34: u16 = 0xFF1E; // freq hi + trigger
 
-// Control
-pub const NR50: u16 = 0xFF24; // volume L/R
-pub const NR51: u16 = 0xFF25; // panning
-pub const NR52: u16 = 0xFF26; // master enable + channel status
+    // Channel 4 (noise)
+    pub const NR41: u16 = 0xFF20; // length
+    pub const NR42: u16 = 0xFF21; // envelope
+    pub const NR43: u16 = 0xFF22; // polynomial counter
+    pub const NR44: u16 = 0xFF23; // trigger
 
-pub const AUDIO_RAM_START: u16 = 0xFF10;
-pub const AUDIO_RAM_END: u16 = 0xFF26;
-pub const AUDIO_RAM_NR52: u16 = 0xFF26;
+    // Control
+    pub const NR50: u16 = 0xFF24; // volume L/R
+    pub const NR51: u16 = 0xFF25; // panning
+    pub const NR52: u16 = 0xFF26; // master enable + channel status
 
-// Wave RAM
-pub const WAVE_RAM_START: u16 = 0xFF30;
-pub const WAVE_RAM_END: u16 = 0xFF3F;
+    pub const AUDIO_RAM_START: u16 = 0xFF10;
+    pub const AUDIO_RAM_END: u16 = 0xFF26;
+    pub const AUDIO_RAM_NR52: u16 = 0xFF26;
+
+    // Wave RAM (custom audio)
+    pub const WAVE_RAM_START: u16 = 0xFF30;
+    pub const WAVE_RAM_END: u16 = 0xFF3F;
+}

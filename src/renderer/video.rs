@@ -84,9 +84,9 @@ impl VideoRenderer {
             gb.loadstate(rom_path);
         }
 
-        if autosave_due {
-            gb.mmu.saveram(rom_path, &gb.cart);
-        }
+        // if autosave_due {
+        //     gb.mmu.saveram(rom_path, &gb.cart);
+        // }
 
         ui.ctx().request_repaint();
     }

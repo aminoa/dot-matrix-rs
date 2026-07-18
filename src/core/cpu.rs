@@ -200,9 +200,17 @@ impl CPU {
         self.update_div(instruction_cycles, mmu, cart, joypad, apu);
     }
 
-    pub fn check_interrupts(&mut self, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad, apu: &mut APU) {
-        let interrupt_flag = mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad, apu);
-        let interrupt_enable = mmu.read_byte(InterruptSource::InterruptEnable as u16, cart, joypad, apu);
+    pub fn check_interrupts(
+        &mut self,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+        apu: &mut APU,
+    ) {
+        let interrupt_flag =
+            mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad, apu);
+        let interrupt_enable =
+            mmu.read_byte(InterruptSource::InterruptEnable as u16, cart, joypad, apu);
 
         if self.ime && (interrupt_flag & interrupt_enable) != 0 {
             self.handle_interrupt(
@@ -268,7 +276,13 @@ impl CPU {
             self.ime = false;
 
             let new_interrupt_flag = interrupt_flag & !(1 << interrupt_bit as u8);
-            mmu.write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag, cart, joypad, apu);
+            mmu.write_byte(
+                InterruptSource::InterruptFlag as u16,
+                new_interrupt_flag,
+                cart,
+                joypad,
+                apu,
+            );
 
             self.push(self.pc, mmu, cart, joypad, apu);
             match interrupt_bit {
@@ -289,18 +303,38 @@ impl CPU {
         joypad: &mut Joypad,
         apu: &mut APU,
     ) {
-        let interrupt_flag = mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad, apu);
+        let interrupt_flag =
+            mmu.read_byte(InterruptSource::InterruptFlag as u16, cart, joypad, apu);
         let new_interrupt_flag = interrupt_flag | (1 << interrupt_bit as u8);
-        mmu.write_byte(InterruptSource::InterruptFlag as u16, new_interrupt_flag, cart, joypad, apu);
+        mmu.write_byte(
+            InterruptSource::InterruptFlag as u16,
+            new_interrupt_flag,
+            cart,
+            joypad,
+            apu,
+        );
     }
 
-    pub fn pop(&mut self, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad, apu: &mut APU) -> u16 {
+    pub fn pop(
+        &mut self,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+        apu: &mut APU,
+    ) -> u16 {
         let val = mmu.read_short(self.sp, cart, joypad, apu);
         self.sp = self.sp.wrapping_add(2);
         return val;
     }
 
-    pub fn push(&mut self, value: u16, mmu: &mut MMU, cart: &mut Cart, joypad: &mut Joypad, apu: &mut APU) {
+    pub fn push(
+        &mut self,
+        value: u16,
+        mmu: &mut MMU,
+        cart: &mut Cart,
+        joypad: &mut Joypad,
+        apu: &mut APU,
+    ) {
         self.sp = self.sp.wrapping_sub(2);
         mmu.write_short(self.sp, value, cart, joypad, apu);
     }
