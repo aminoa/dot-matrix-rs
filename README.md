@@ -23,7 +23,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - Joypad inputs
 - Memory banking (MBC1/MBC3)
 - Savestates
-- APU (TODO)
+- APU
 
 ## Credits:
 
