@@ -1,5 +1,5 @@
 use crate::consts::{APU_RAM, AUDIO_INIT, CLOCK_SPEED};
-use ringbuf::{traits::Observer, traits::Producer, HeapProd};
+use ringbuf::{traits::Producer, HeapProd};
 
 pub enum FrameSequencer {
     Step0, // Length Counter
@@ -10,16 +10,6 @@ pub enum FrameSequencer {
     Step5, // None
     Step6, // Length Counter, Sweep
     Step7, // Volume Envelope
-}
-
-pub struct Channel2 {
-    pub enabled: bool,
-
-    pub frequency_timer: i32,
-    pub duty_position: u8,
-    pub length_timer: u8,
-    pub envelope_volume: u8,
-    pub envelope_timer: u8,
 }
 
 pub struct Channel1 {
@@ -34,6 +24,24 @@ pub struct Channel1 {
     pub sweep_frequency: i32,
     pub sweep_timer: u8,
     pub sweep_enabled: bool,
+}
+
+pub struct Channel2 {
+    pub enabled: bool,
+
+    pub frequency_timer: i32,
+    pub duty_position: u8,
+    pub length_timer: u8,
+    pub envelope_volume: u8,
+    pub envelope_timer: u8,
+}
+
+pub struct Channel3 {
+    pub enabled: bool,
+
+    pub frequency_timer: i32,
+    pub wave_position: u8,
+    pub length_timer: u16,
 }
 
 pub const WAVE_PATTERN_DUTY: [u8; 4] = [
@@ -140,7 +148,10 @@ impl APU {
                     self.clock_sweep();
                     self.frame_sequence_state = FrameSequencer::Step7;
                 }
-                FrameSequencer::Step7 => self.frame_sequence_state = FrameSequencer::Step0,
+                FrameSequencer::Step7 => {
+                    self.clock_envelope();
+                    self.frame_sequence_state = FrameSequencer::Step0;
+                }
             }
             self.frame_sequence_cycles -= 8192;
         }
@@ -171,6 +182,7 @@ impl APU {
 
             APU_RAM::NR11 => {
                 self.channel1.length_timer = 64 - (val & 0b11_1111);
+                self.regs[addr as usize - 0xFF10] = val
             }
 
             APU_RAM::NR14 => {
@@ -281,7 +293,7 @@ impl APU {
         self.channel1.sweep_enabled = sweep_pace != 0 || sweep_step != 0;
 
         if sweep_step != 0 {
-            let new_frequency: i32 = if sweep_direction == 1 {
+            let new_frequency: i32 = if sweep_direction == 0 {
                 self.channel1.sweep_frequency + (self.channel1.sweep_frequency / (1 << sweep_step))
             } else {
                 self.channel1.sweep_frequency - (self.channel1.sweep_frequency / (1 << sweep_step))
@@ -300,7 +312,7 @@ impl APU {
                 self.channel1.enabled = false
             }
         }
-        if self.channel1.length_timer != 0 && self.read_register(APU_RAM::NR24) & 0b1000000 != 0 {
+        if self.channel2.length_timer != 0 && self.read_register(APU_RAM::NR24) & 0b1000000 != 0 {
             self.channel2.length_timer -= 1;
             if self.channel2.length_timer == 0 {
                 self.channel2.enabled = false
@@ -319,7 +331,7 @@ impl APU {
             self.channel1.sweep_timer = if sweep_pace == 0 { 8 } else { sweep_pace };
 
             if self.channel1.sweep_enabled && sweep_pace != 0 {
-                let new_frequency: i32 = if sweep_direction == 1 {
+                let new_frequency: i32 = if sweep_direction == 0 {
                     self.channel1.sweep_frequency
                         + (self.channel1.sweep_frequency / (1 << sweep_step))
                 } else {
@@ -339,5 +351,16 @@ impl APU {
                 }
             }
         }
+    }
+
+    pub fn clock_envelope(&mut self) {
+        // let envelope_sweep_pace = (self.read_register(APU_RAM::NR10) & 0b111);
+        // if envelope_sweep_pace != 0 {
+        //     self.channel1.envelope_timer -= 1;
+        //     if self.channel1.envelope_timer == 0 {
+
+        //     }
+
+        // }
     }
 }
