@@ -17,7 +17,7 @@ impl AudioRenderer {
 
         // 1 second of buffer
         let rb = HeapRb::<f32>::new(config.sample_rate as usize / 5);
-        let (mut producer, mut consumer): (HeapProd<f32>, HeapCons<f32>) = rb.split();
+        let (producer, mut consumer): (HeapProd<f32>, HeapCons<f32>) = rb.split();
 
         let stream = device
             .build_output_stream(

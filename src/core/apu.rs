@@ -17,11 +17,9 @@ pub struct Channel2 {
 
     pub frequency_timer: i32, // NR23/24
     pub duty_position: u8,
-    pub length_cycle: u8,
-    pub volume_envelope: u8,
-
-    pub initial_volume: u8,
-    pub period_low: u8,
+    pub length_timer: u8,
+    pub envelope_volume: u8,
+    pub envelope_timer: u8,
 }
 
 pub const WAVE_PATTERN_DUTY: [u8; 4] = [
@@ -53,18 +51,17 @@ impl APU {
             regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val;
         }
 
+        let wave = [0x0; 0x10];
+
         let channel2 = Channel2 {
             enabled: true,
             frequency_timer: 0,
             duty_position: 0,
-            length_cycle: 0,
-            volume_envelope: 0,
-
-            initial_volume: 0,
-            period_low: 0,
+            length_timer: 0,
+            envelope_volume: 1,
+            envelope_timer: 0,
         };
 
-        let wave = [0x0; 0x10];
         return APU {
             master_enable: true,
             regs: regs,
@@ -73,17 +70,18 @@ impl APU {
             current_cycles: 0.0,
             sample_rate: sample_rate,
 
+            channel2: channel2,
+
             // frame sequencer
             frame_seq_state: FrameSequencer::Step0,
             frame_seq_cycles: 0,
-            channel2: channel2,
         };
     }
 
     pub fn update(&mut self, instruction_cycles: u32) {
         let cycles_per_sample: f32 = CLOCK_SPEED as f32 / self.sample_rate;
         self.current_cycles += instruction_cycles as f32;
-        self.clock_channel2(instruction_cycles);
+        self.update_channel2(instruction_cycles);
 
         // Frame Sequencer
         self.frame_seq_cycles += instruction_cycles;
@@ -101,24 +99,13 @@ impl APU {
             }
             self.frame_seq_cycles -= 8192;
         }
-        // Frequency Timer
 
         while self.current_cycles >= cycles_per_sample {
             self.current_cycles -= cycles_per_sample;
-
-            let duty_select = self.read_register(APU_RAM::NR21 >> 6) & 3;
-            let pattern = WAVE_PATTERN_DUTY[duty_select as usize];
-            let bit = (pattern >> self.channel2.duty_position) & 1;
-            let volume = (self.read_register(APU_RAM::NR22) >> 4) & 0xF;
-            let digital = if self.channel2.enabled && bit == 1 { volume } else { 0 };
-            let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
-            let prime = 2; // a couple of LR frames' worth of mono samples
-                           // for _ in 0..prime {
-                           //
-            let cap = self.sink.capacity().get(); // total slots
-            let filled = self.sink.occupied_len(); // samples waiting to be consumed
-            let pct = (filled as f32 / cap as f32) * 100.0;
-            let _ = self.sink.try_push(analog);
+            if self.master_enable {
+                let channel2_output = self.play_channel2();
+                let _ = self.sink.try_push(channel2_output);
+            }
         }
     }
 
@@ -132,8 +119,30 @@ impl APU {
 
     pub fn write_register(&mut self, addr: u16, val: u8) {
         match addr {
-            // AUDIO_RAM_NR52 => self.master_enable = val & 0x07 == 1,
-            APU_RAM::AUDIO_RAM_START..APU_RAM::AUDIO_RAM_END => {
+            APU_RAM::NR52 => self.master_enable = val & 0b10000000 != 0,
+            APU_RAM::NR51 => (), // Panning
+            APU_RAM::NR50 => (), // Master Volume
+
+            APU_RAM::NR24 => {
+                if val & 0b10000000 != 0 {
+                    self.channel2.enabled = true;
+                    if self.channel2.length_timer == 0 {
+                        self.channel2.length_timer = 64;
+                    }
+                    let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8
+                        | (self.read_register(APU_RAM::NR23) as i32);
+                    self.channel2.frequency_timer = (2048 - period as i32) * 4;
+                    self.channel2.envelope_volume =
+                        (0b11110000 & self.read_register(APU_RAM::NR22)) >> 4;
+                    self.channel2.envelope_timer = 0b111 & self.read_register(APU_RAM::NR22);
+
+                    // length counter
+                }
+
+                self.regs[addr as usize - 0xFF10] = val
+            }
+
+            APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => {
                 self.regs[addr as usize - 0xFF10] = val
             }
             APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => {
@@ -143,7 +152,7 @@ impl APU {
         }
     }
 
-    pub fn clock_channel2(&mut self, instruction_cycles: u32) {
+    pub fn update_channel2(&mut self, instruction_cycles: u32) {
         self.channel2.frequency_timer -= instruction_cycles as i32;
         while self.channel2.frequency_timer <= 0 {
             let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8
@@ -151,5 +160,16 @@ impl APU {
             self.channel2.frequency_timer += (2048 - period as i32) * 4;
             self.channel2.duty_position = (self.channel2.duty_position + 1) % 8;
         }
+    }
+
+    pub fn play_channel2(&self) -> f32 {
+        let duty_select = self.read_register(APU_RAM::NR21) >> 6 & 3;
+        let pattern = WAVE_PATTERN_DUTY[duty_select as usize];
+        let bit = (pattern >> self.channel2.duty_position) & 1;
+        // 0 to 15
+        let digital =
+            if self.channel2.enabled && bit == 1 { self.channel2.envelope_volume } else { 0 };
+        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+        return analog;
     }
 }
