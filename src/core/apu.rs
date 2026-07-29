@@ -14,6 +14,32 @@ pub enum FrameSequencer {
     Step7, // Volume Envelope
 }
 
+pub struct Envelope {
+    pub volume: u8,
+    pub timer: u8,
+}
+
+impl Envelope {
+    pub fn new(volume: u8) -> Self {
+        Envelope { volume, timer: 0 }
+    }
+
+    pub fn clock(&mut self, control_reg: u8) {
+        let envelope_sweep_pace = control_reg & 0b111;
+        if envelope_sweep_pace != 0 {
+            self.timer = self.timer.saturating_sub(1);
+            if self.timer == 0 {
+                self.timer = envelope_sweep_pace;
+                if (control_reg & 0b1000) != 0 {
+                    self.volume = self.volume.saturating_add(1).min(15);
+                } else {
+                    self.volume = self.volume.saturating_sub(1);
+                }
+            }
+        }
+    }
+}
+
 // TODO:
 // DAC
 // Mixer
@@ -25,8 +51,7 @@ pub struct Channel1 {
     pub frequency_timer: i32,
     pub duty_position: u8,
     pub length_timer: u8,
-    pub envelope_volume: u8,
-    pub envelope_timer: u8,
+    pub envelope: Envelope,
 
     pub sweep_frequency: i32,
     pub sweep_timer: u8,
@@ -39,8 +64,7 @@ pub struct Channel2 {
     pub frequency_timer: i32,
     pub duty_position: u8,
     pub length_timer: u8,
-    pub envelope_volume: u8,
-    pub envelope_timer: u8,
+    pub envelope: Envelope,
 }
 
 pub struct Channel3 {
@@ -55,8 +79,7 @@ pub struct Channel4 {
     pub enabled: bool,
     pub frequency_timer: i32,
     pub length_timer: u8,
-    pub envelope_volume: u8,
-    pub envelope_timer: u8,
+    pub envelope: Envelope,
     pub lfsr: u16,
 }
 
@@ -99,8 +122,7 @@ impl APU {
             frequency_timer: 0,
             duty_position: 0,
             length_timer: 0,
-            envelope_volume: 1,
-            envelope_timer: 0,
+            envelope: Envelope::new(1),
 
             sweep_frequency: 0,
             sweep_timer: 8,
@@ -112,8 +134,7 @@ impl APU {
             frequency_timer: 0,
             duty_position: 0,
             length_timer: 0,
-            envelope_volume: 1,
-            envelope_timer: 0,
+            envelope: Envelope::new(1),
         };
 
         let channel3 =
@@ -123,8 +144,7 @@ impl APU {
             enabled: true,
             frequency_timer: 0,
             length_timer: 0,
-            envelope_volume: 1,
-            envelope_timer: 0,
+            envelope: Envelope::new(1),
             lfsr: 0,
         };
 
@@ -234,9 +254,9 @@ impl APU {
                     let period: i32 = (((self.read_register(APU_RAM::NR14)) as i32) & 7) << 8
                         | (self.read_register(APU_RAM::NR13) as i32);
                     self.channel1.frequency_timer = (2048 - period as i32) * 4;
-                    self.channel1.envelope_volume =
+                    self.channel1.envelope.volume =
                         (0b11110000 & self.read_register(APU_RAM::NR12)) >> 4;
-                    self.channel1.envelope_timer = 0b111 & self.read_register(APU_RAM::NR12);
+                    self.channel1.envelope.timer = 0b111 & self.read_register(APU_RAM::NR12);
 
                     if self.channel1.length_timer == 0 {
                         self.channel1.length_timer = 64;
@@ -260,9 +280,9 @@ impl APU {
                     let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8
                         | (self.read_register(APU_RAM::NR23) as i32);
                     self.channel2.frequency_timer = (2048 - period as i32) * 4;
-                    self.channel2.envelope_volume =
+                    self.channel2.envelope.volume =
                         (0b1111_0000 & self.read_register(APU_RAM::NR22)) >> 4;
-                    self.channel2.envelope_timer = 0b111 & self.read_register(APU_RAM::NR22);
+                    self.channel2.envelope.timer = 0b111 & self.read_register(APU_RAM::NR22);
                 }
 
                 self.regs[addr as usize - 0xFF10] = val
@@ -291,6 +311,11 @@ impl APU {
                 self.regs[addr as usize - 0xFF10] = val
             }
 
+            APU_RAM::NR41 => {
+                self.channel4.length_timer = 64 - (val & 0b11_1111);
+                self.regs[addr as usize - 0xFF10] = val
+            }
+
             APU_RAM::NR44 => {
                 if val & 0b1000_0000 != 0 {
                     self.channel4.enabled = true;
@@ -312,9 +337,9 @@ impl APU {
 
                     let shift = (self.read_register(APU_RAM::NR43) & 0b11110000) >> 4;
                     self.channel4.frequency_timer = divisor << shift;
-                    self.channel4.envelope_volume =
+                    self.channel4.envelope.volume =
                         (0b1111_0000 & self.read_register(APU_RAM::NR42)) >> 4;
-                    self.channel4.envelope_timer = 0b111 & self.read_register(APU_RAM::NR42);
+                    self.channel4.envelope.timer = 0b111 & self.read_register(APU_RAM::NR42);
                 }
 
                 self.regs[addr as usize - 0xFF10] = val
@@ -371,13 +396,13 @@ impl APU {
             };
 
             let shift = (self.read_register(APU_RAM::NR43) & 0b11110000) >> 4;
-            self.channel4.frequency_timer = divisor << shift;
+            self.channel4.frequency_timer += divisor << shift;
 
             // Update LSFR
             let tap_bit = !(self.channel4.lfsr & 1 ^ ((self.channel4.lfsr >> 1) & 1)) & 1;
             self.channel4.lfsr = (tap_bit << 14) | self.channel4.lfsr >> 1;
             if (self.read_register(APU_RAM::NR43) & 0b1000) != 0 {
-                self.channel4.lfsr = (!1 << 6) & self.channel4.lfsr;
+                self.channel4.lfsr = (!(1 << 6)) & self.channel4.lfsr;
                 self.channel4.lfsr = (tap_bit << 6) | self.channel4.lfsr;
             }
         }
@@ -389,7 +414,7 @@ impl APU {
         let bit = (pattern >> self.channel1.duty_position) & 1;
         // 0 to 15
         let digital =
-            if self.channel1.enabled && bit == 1 { self.channel1.envelope_volume } else { 0 };
+            if self.channel1.enabled && bit == 1 { self.channel1.envelope.volume } else { 0 };
         let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
         return analog;
     }
@@ -400,7 +425,7 @@ impl APU {
         let bit = (pattern >> self.channel2.duty_position) & 1;
         // 0 to 15
         let digital =
-            if self.channel2.enabled && bit == 1 { self.channel2.envelope_volume } else { 0 };
+            if self.channel2.enabled && bit == 1 { self.channel2.envelope.volume } else { 0 };
         let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
         return analog;
     }
@@ -431,7 +456,7 @@ impl APU {
 
     pub fn output_channel4(&self) -> f32 {
         let digital = if self.channel4.enabled && (self.channel4.lfsr & 1) == 0 {
-            self.channel4.envelope_volume
+            self.channel4.envelope.volume
         } else {
             0
         };
@@ -524,10 +549,8 @@ impl APU {
     }
 
     pub fn clock_envelope(&mut self) {
-        // let envelope_sweep_pace = (self.read_register(APU_RAM::NR10) & 0b111);
-        // if envelope_sweep_pace != 0 {
-        //     self.channel1.envelope_timer -= 1;
-        //     // if self.channel1.envelope_timer == 0 {}
-        // }
+        self.channel1.envelope.clock(self.read_register(APU_RAM::NR12));
+        self.channel2.envelope.clock(self.read_register(APU_RAM::NR22));
+        self.channel4.envelope.clock(self.read_register(APU_RAM::NR42));
     }
 }
