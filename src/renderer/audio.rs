@@ -10,7 +10,6 @@ impl AudioRenderer {
     pub fn new() -> (AudioRenderer, HeapProd<f32>) {
         let host = cpal::default_host();
         let device = host.default_output_device().expect("Error: no output device");
-        println!("{}", device);
 
         let config: cpal::StreamConfig = device.default_output_config().unwrap().into();
         let channels = config.channels as usize;

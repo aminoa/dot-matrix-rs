@@ -51,6 +51,15 @@ pub struct Channel3 {
     pub length_timer: u16,
 }
 
+pub struct Channel4 {
+    pub enabled: bool,
+    pub frequency_timer: i32,
+    pub length_timer: u8,
+    pub envelope_volume: u8,
+    pub envelope_timer: u8,
+    pub lfsr: u16,
+}
+
 pub const WAVE_PATTERN_DUTY: [u8; 4] = [
     0b00000001, // 12.5
     0b00000011, // 25
@@ -73,6 +82,7 @@ pub struct APU {
     channel1: Channel1,
     channel2: Channel2,
     channel3: Channel3,
+    channel4: Channel4,
 }
 
 impl APU {
@@ -109,6 +119,15 @@ impl APU {
         let channel3 =
             Channel3 { enabled: true, frequency_timer: 0, wave_position: 0, length_timer: 0 };
 
+        let channel4 = Channel4 {
+            enabled: true,
+            frequency_timer: 0,
+            length_timer: 0,
+            envelope_volume: 1,
+            envelope_timer: 0,
+            lfsr: 0,
+        };
+
         return APU {
             master_enable: true,
             regs: regs,
@@ -120,6 +139,7 @@ impl APU {
             channel1: channel1,
             channel2: channel2,
             channel3: channel3,
+            channel4: channel4,
 
             // frame sequencer
             frame_sequence_state: FrameSequencer::Step0,
@@ -175,9 +195,10 @@ impl APU {
                 let channel1_output = self.output_channel1();
                 let channel2_output = self.output_channel2();
                 let channel3_output = self.output_channel3();
-                let _ = self
-                    .sink
-                    .try_push((channel1_output + channel2_output + channel3_output) / 20.0);
+                let channel4_output = self.output_channel4();
+                let _ = self.sink.try_push(
+                    (channel1_output + channel2_output + channel3_output + channel4_output) / 20.0,
+                );
             }
         }
     }
@@ -242,10 +263,6 @@ impl APU {
                     self.channel2.envelope_volume =
                         (0b1111_0000 & self.read_register(APU_RAM::NR22)) >> 4;
                     self.channel2.envelope_timer = 0b111 & self.read_register(APU_RAM::NR22);
-
-                    if self.channel2.length_timer == 0 {
-                        self.channel2.length_timer = 64;
-                    }
                 }
 
                 self.regs[addr as usize - 0xFF10] = val
@@ -269,6 +286,35 @@ impl APU {
                         | (self.read_register(APU_RAM::NR33) as i32);
                     self.channel3.frequency_timer = (2048 - period as i32) * 2;
                     self.channel3.wave_position = 0;
+                }
+
+                self.regs[addr as usize - 0xFF10] = val
+            }
+
+            APU_RAM::NR44 => {
+                if val & 0b1000_0000 != 0 {
+                    self.channel4.enabled = true;
+                    if self.channel4.length_timer == 0 {
+                        self.channel4.length_timer = 64;
+                    }
+                    let clock_divider_bits = self.read_register(APU_RAM::NR43) & 0b111;
+                    let divisor = match clock_divider_bits {
+                        0 => 8,
+                        1 => 16,
+                        2 => 32,
+                        3 => 48,
+                        4 => 64,
+                        5 => 80,
+                        6 => 96,
+                        7 => 112,
+                        _ => 8,
+                    };
+
+                    let shift = (self.read_register(APU_RAM::NR43) & 0b11110000) >> 4;
+                    self.channel4.frequency_timer = divisor << shift;
+                    self.channel4.envelope_volume =
+                        (0b1111_0000 & self.read_register(APU_RAM::NR42)) >> 4;
+                    self.channel4.envelope_timer = 0b111 & self.read_register(APU_RAM::NR42);
                 }
 
                 self.regs[addr as usize - 0xFF10] = val
@@ -307,6 +353,33 @@ impl APU {
                 | (self.read_register(APU_RAM::NR33) as i32);
             self.channel3.frequency_timer += (2048 - period as i32) * 2;
             self.channel3.wave_position = (self.channel3.wave_position + 1) % 32;
+        }
+
+        self.channel4.frequency_timer -= instruction_cycles as i32;
+        while self.channel4.frequency_timer <= 0 {
+            let clock_divider_bits = self.read_register(APU_RAM::NR43) & 0b111;
+            let divisor = match clock_divider_bits {
+                0 => 8,
+                1 => 16,
+                2 => 32,
+                3 => 48,
+                4 => 64,
+                5 => 80,
+                6 => 96,
+                7 => 112,
+                _ => 8,
+            };
+
+            let shift = (self.read_register(APU_RAM::NR43) & 0b11110000) >> 4;
+            self.channel4.frequency_timer = divisor << shift;
+
+            // Update LSFR
+            let tap_bit = !(self.channel4.lfsr & 1 ^ ((self.channel4.lfsr >> 1) & 1)) & 1;
+            self.channel4.lfsr = (tap_bit << 14) | self.channel4.lfsr >> 1;
+            if (self.read_register(APU_RAM::NR43) & 0b1000) != 0 {
+                self.channel4.lfsr = (!1 << 6) & self.channel4.lfsr;
+                self.channel4.lfsr = (tap_bit << 6) | self.channel4.lfsr;
+            }
         }
     }
 
@@ -356,6 +429,16 @@ impl APU {
         return analog;
     }
 
+    pub fn output_channel4(&self) -> f32 {
+        let digital = if self.channel4.enabled && (self.channel4.lfsr & 1) == 0 {
+            self.channel4.envelope_volume
+        } else {
+            0
+        };
+        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+        return analog;
+    }
+
     pub fn trigger_sweep(&mut self) {
         self.channel1.sweep_frequency = (((self.read_register(APU_RAM::NR14)) as i32) & 7) << 8
             | (self.read_register(APU_RAM::NR13) as i32);
@@ -397,6 +480,13 @@ impl APU {
             self.channel3.length_timer -= 1;
             if self.channel3.length_timer == 0 {
                 self.channel3.enabled = false
+            }
+        }
+
+        if self.channel4.length_timer != 0 && self.read_register(APU_RAM::NR44) & 0b1000000 != 0 {
+            self.channel4.length_timer -= 1;
+            if self.channel4.length_timer == 0 {
+                self.channel4.enabled = false
             }
         }
     }
