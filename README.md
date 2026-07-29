@@ -35,3 +35,4 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - [Dot Matrix](https://github.com/aminoa/dot-matrix/)
 - [The Ultimate Game Boy Talk (33c3)](https://www.youtube.com/watch?v=HyzD8pNlpwI)
 - [Reddit: Gameboy - Confusion over T and M cycle stepping through the CPU and the PPU etc](https://www.reddit.com/r/EmuDev/comments/tnh41p/gameboy_confusion_over_t_and_m_cycle_stepping/)
+- Many more resources not listed here

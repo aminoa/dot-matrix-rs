@@ -1,3 +1,5 @@
+use std::{panic, println};
+
 use crate::consts::{APU_RAM, AUDIO_INIT, CLOCK_SPEED};
 use ringbuf::{traits::Producer, HeapProd};
 
@@ -11,6 +13,11 @@ pub enum FrameSequencer {
     Step6, // Length Counter, Sweep
     Step7, // Volume Envelope
 }
+
+// TODO:
+// DAC
+// Mixer
+// Volume
 
 pub struct Channel1 {
     pub enabled: bool,
@@ -54,7 +61,7 @@ pub const WAVE_PATTERN_DUTY: [u8; 4] = [
 pub struct APU {
     master_enable: bool,
     regs: [u8; 0x30],
-    wave: [u8; 0x10],
+    wave_ram: [u8; 0x10], // 4 bits is 1 sample
 
     sink: HeapProd<f32>,
     sample_rate: f32,
@@ -65,6 +72,7 @@ pub struct APU {
     // phase: f32,
     channel1: Channel1,
     channel2: Channel2,
+    channel3: Channel3,
 }
 
 impl APU {
@@ -98,16 +106,20 @@ impl APU {
             envelope_timer: 0,
         };
 
+        let channel3 =
+            Channel3 { enabled: true, frequency_timer: 0, wave_position: 0, length_timer: 0 };
+
         return APU {
             master_enable: true,
             regs: regs,
-            wave: wave,
+            wave_ram: wave,
             sink: sink,
             current_cycles: 0.0,
             sample_rate: sample_rate,
 
             channel1: channel1,
             channel2: channel2,
+            channel3: channel3,
 
             // frame sequencer
             frame_sequence_state: FrameSequencer::Step0,
@@ -117,6 +129,7 @@ impl APU {
 
     pub fn update(&mut self, instruction_cycles: u32) {
         let cycles_per_sample: f32 = CLOCK_SPEED as f32 / self.sample_rate;
+        // println!("{}", cycles_per_sample);
         self.current_cycles += instruction_cycles as f32;
         self.clock_frequency_timers(instruction_cycles);
 
@@ -161,7 +174,10 @@ impl APU {
             if self.master_enable {
                 let channel1_output = self.output_channel1();
                 let channel2_output = self.output_channel2();
-                let _ = self.sink.try_push((channel1_output + channel2_output) / 2.0);
+                let channel3_output = self.output_channel3();
+                let _ = self
+                    .sink
+                    .try_push((channel1_output + channel2_output + channel3_output) / 20.0);
             }
         }
     }
@@ -169,7 +185,9 @@ impl APU {
     pub fn read_register(&self, addr: u16) -> u8 {
         match addr {
             APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => self.regs[addr as usize - 0xFF10],
-            APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => self.wave[addr as usize - 0xFF30],
+            APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => {
+                self.wave_ram[addr as usize - 0xFF30]
+            }
             _ => 0xFF,
         }
     }
@@ -209,6 +227,7 @@ impl APU {
 
             APU_RAM::NR21 => {
                 self.channel2.length_timer = 64 - (val & 0b11_1111);
+                self.regs[addr as usize - 0xFF10] = val
             }
 
             APU_RAM::NR24 => {
@@ -232,11 +251,34 @@ impl APU {
                 self.regs[addr as usize - 0xFF10] = val
             }
 
+            APU_RAM::NR31 => {
+                self.channel3.length_timer = 256 - val as u16;
+                self.regs[addr as usize - 0xFF10] = val
+            }
+
+            APU_RAM::NR34 => {
+                let dac_enabled = (self.read_register(APU_RAM::NR30) & 0b10000000) != 0;
+                if val & 0b1000_0000 != 0 {
+                    if dac_enabled {
+                        self.channel3.enabled = true;
+                    }
+                    if self.channel3.length_timer == 0 {
+                        self.channel3.length_timer = 256;
+                    }
+                    let period: i32 = (((self.read_register(APU_RAM::NR34)) as i32) & 7) << 8
+                        | (self.read_register(APU_RAM::NR33) as i32);
+                    self.channel3.frequency_timer = (2048 - period as i32) * 2;
+                    self.channel3.wave_position = 0;
+                }
+
+                self.regs[addr as usize - 0xFF10] = val
+            }
+
             APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => {
                 self.regs[addr as usize - 0xFF10] = val
             }
             APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => {
-                self.wave[addr as usize - 0xFF30] = val
+                self.wave_ram[addr as usize - 0xFF30] = val
             }
             _ => (),
         }
@@ -258,6 +300,14 @@ impl APU {
             self.channel2.frequency_timer += (2048 - period as i32) * 4;
             self.channel2.duty_position = (self.channel2.duty_position + 1) % 8;
         }
+
+        self.channel3.frequency_timer -= instruction_cycles as i32;
+        while self.channel3.frequency_timer <= 0 {
+            let period: i32 = (((self.read_register(APU_RAM::NR34)) as i32) & 7) << 8
+                | (self.read_register(APU_RAM::NR33) as i32);
+            self.channel3.frequency_timer += (2048 - period as i32) * 2;
+            self.channel3.wave_position = (self.channel3.wave_position + 1) % 32;
+        }
     }
 
     pub fn output_channel1(&self) -> f32 {
@@ -278,6 +328,30 @@ impl APU {
         // 0 to 15
         let digital =
             if self.channel2.enabled && bit == 1 { self.channel2.envelope_volume } else { 0 };
+        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+        return analog;
+    }
+
+    pub fn output_channel3(&self) -> f32 {
+        let index = self.channel3.wave_position / 2;
+        let nibble = if self.channel3.wave_position % 2 == 0 {
+            // Take upper nibble
+            (self.wave_ram[index as usize] & 0b11110000) >> 4
+        } else {
+            self.wave_ram[index as usize] & 0b1111
+        };
+
+        let output_level = (self.read_register(APU_RAM::NR32) & 0b1100000) >> 5;
+        let nibble = match output_level {
+            0 => 0,
+            1 => nibble,
+            2 => nibble >> 1,
+            3 => nibble >> 2,
+            _ => panic!("Error: unrecognized output level"),
+        };
+
+        let dac_enabled = (self.read_register(APU_RAM::NR30) & 0b10000000) != 0;
+        let digital = if self.channel3.enabled && dac_enabled { nibble } else { 0 };
         let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
         return analog;
     }
@@ -318,7 +392,13 @@ impl APU {
                 self.channel2.enabled = false
             }
         }
-        // Fill in other channels
+
+        if self.channel3.length_timer != 0 && self.read_register(APU_RAM::NR34) & 0b1000000 != 0 {
+            self.channel3.length_timer -= 1;
+            if self.channel3.length_timer == 0 {
+                self.channel3.enabled = false
+            }
+        }
     }
 
     pub fn clock_sweep(&mut self) {
@@ -357,10 +437,7 @@ impl APU {
         // let envelope_sweep_pace = (self.read_register(APU_RAM::NR10) & 0b111);
         // if envelope_sweep_pace != 0 {
         //     self.channel1.envelope_timer -= 1;
-        //     if self.channel1.envelope_timer == 0 {
-
-        //     }
-
+        //     // if self.channel1.envelope_timer == 0 {}
         // }
     }
 }
