@@ -40,6 +40,27 @@ impl Envelope {
     }
 }
 
+pub struct Length {
+    pub timer: u16,
+}
+
+impl Length {
+    pub fn new() -> Self {
+        Length { timer: 0 }
+    }
+
+    pub fn clock(&mut self, control_reg: u8) -> bool {
+        let enabled = if self.timer != 0 && (control_reg & 0b1000000) != 0 {
+            self.timer -= 1;
+            self.timer == 0
+        } else {
+            false
+        };
+
+        return enabled;
+    }
+}
+
 // TODO:
 // DAC
 // Mixer
@@ -50,7 +71,7 @@ pub struct Channel1 {
 
     pub frequency_timer: i32,
     pub duty_position: u8,
-    pub length_timer: u8,
+    pub length: Length,
     pub envelope: Envelope,
 
     pub sweep_frequency: i32,
@@ -63,7 +84,7 @@ pub struct Channel2 {
 
     pub frequency_timer: i32,
     pub duty_position: u8,
-    pub length_timer: u8,
+    pub length: Length,
     pub envelope: Envelope,
 }
 
@@ -72,13 +93,13 @@ pub struct Channel3 {
 
     pub frequency_timer: i32,
     pub wave_position: u8,
-    pub length_timer: u16,
+    pub length: Length,
 }
 
 pub struct Channel4 {
     pub enabled: bool,
     pub frequency_timer: i32,
-    pub length_timer: u8,
+    pub length: Length,
     pub envelope: Envelope,
     pub lfsr: u16,
 }
@@ -121,7 +142,7 @@ impl APU {
             enabled: true,
             frequency_timer: 0,
             duty_position: 0,
-            length_timer: 0,
+            length: Length::new(),
             envelope: Envelope::new(1),
 
             sweep_frequency: 0,
@@ -133,17 +154,17 @@ impl APU {
             enabled: true,
             frequency_timer: 0,
             duty_position: 0,
-            length_timer: 0,
+            length: Length::new(),
             envelope: Envelope::new(1),
         };
 
         let channel3 =
-            Channel3 { enabled: true, frequency_timer: 0, wave_position: 0, length_timer: 0 };
+            Channel3 { enabled: true, frequency_timer: 0, wave_position: 0, length: Length::new() };
 
         let channel4 = Channel4 {
             enabled: true,
             frequency_timer: 0,
-            length_timer: 0,
+            length: Length::new(),
             envelope: Envelope::new(1),
             lfsr: 0,
         };
@@ -240,7 +261,7 @@ impl APU {
             APU_RAM::NR50 => (), // Master Volume
 
             APU_RAM::NR11 => {
-                self.channel1.length_timer = 64 - (val & 0b11_1111);
+                self.channel1.length.timer = 64 - (val & 0b11_1111) as u16;
                 self.regs[addr as usize - 0xFF10] = val
             }
 
@@ -248,8 +269,8 @@ impl APU {
                 self.regs[addr as usize - 0xFF10] = val;
                 if val & 0b10000000 != 0 {
                     self.channel1.enabled = true;
-                    if self.channel1.length_timer == 0 {
-                        self.channel1.length_timer = 64;
+                    if self.channel1.length.timer == 0 {
+                        self.channel1.length.timer = 64;
                     }
                     let period: i32 = (((self.read_register(APU_RAM::NR14)) as i32) & 7) << 8
                         | (self.read_register(APU_RAM::NR13) as i32);
@@ -258,8 +279,8 @@ impl APU {
                         (0b11110000 & self.read_register(APU_RAM::NR12)) >> 4;
                     self.channel1.envelope.timer = 0b111 & self.read_register(APU_RAM::NR12);
 
-                    if self.channel1.length_timer == 0 {
-                        self.channel1.length_timer = 64;
+                    if self.channel1.length.timer == 0 {
+                        self.channel1.length.timer = 64;
                     }
 
                     self.trigger_sweep();
@@ -267,15 +288,15 @@ impl APU {
             }
 
             APU_RAM::NR21 => {
-                self.channel2.length_timer = 64 - (val & 0b11_1111);
+                self.channel2.length.timer = 64 - (val & 0b11_1111) as u16;
                 self.regs[addr as usize - 0xFF10] = val
             }
 
             APU_RAM::NR24 => {
                 if val & 0b1000_0000 != 0 {
                     self.channel2.enabled = true;
-                    if self.channel2.length_timer == 0 {
-                        self.channel2.length_timer = 64;
+                    if self.channel2.length.timer == 0 {
+                        self.channel2.length.timer = 64;
                     }
                     let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8
                         | (self.read_register(APU_RAM::NR23) as i32);
@@ -289,7 +310,7 @@ impl APU {
             }
 
             APU_RAM::NR31 => {
-                self.channel3.length_timer = 256 - val as u16;
+                self.channel3.length.timer = 256 - val as u16;
                 self.regs[addr as usize - 0xFF10] = val
             }
 
@@ -299,8 +320,8 @@ impl APU {
                     if dac_enabled {
                         self.channel3.enabled = true;
                     }
-                    if self.channel3.length_timer == 0 {
-                        self.channel3.length_timer = 256;
+                    if self.channel3.length.timer == 0 {
+                        self.channel3.length.timer = 256;
                     }
                     let period: i32 = (((self.read_register(APU_RAM::NR34)) as i32) & 7) << 8
                         | (self.read_register(APU_RAM::NR33) as i32);
@@ -312,15 +333,15 @@ impl APU {
             }
 
             APU_RAM::NR41 => {
-                self.channel4.length_timer = 64 - (val & 0b11_1111);
+                self.channel4.length.timer = 64 - (val & 0b11_1111) as u16;
                 self.regs[addr as usize - 0xFF10] = val
             }
 
             APU_RAM::NR44 => {
                 if val & 0b1000_0000 != 0 {
                     self.channel4.enabled = true;
-                    if self.channel4.length_timer == 0 {
-                        self.channel4.length_timer = 64;
+                    if self.channel4.length.timer == 0 {
+                        self.channel4.length.timer = 64;
                     }
                     let clock_divider_bits = self.read_register(APU_RAM::NR43) & 0b111;
                     let divisor = match clock_divider_bits {
@@ -488,31 +509,17 @@ impl APU {
     }
 
     pub fn clock_length_timers(&mut self) {
-        if self.channel1.length_timer != 0 && self.read_register(APU_RAM::NR14) & 0b1000000 != 0 {
-            self.channel1.length_timer -= 1;
-            if self.channel1.length_timer == 0 {
-                self.channel1.enabled = false
-            }
+        if self.channel1.length.clock(self.read_register(APU_RAM::NR14)) {
+            self.channel1.enabled = false;
         }
-        if self.channel2.length_timer != 0 && self.read_register(APU_RAM::NR24) & 0b1000000 != 0 {
-            self.channel2.length_timer -= 1;
-            if self.channel2.length_timer == 0 {
-                self.channel2.enabled = false
-            }
+        if self.channel2.length.clock(self.read_register(APU_RAM::NR24)) {
+            self.channel2.enabled = false;
         }
-
-        if self.channel3.length_timer != 0 && self.read_register(APU_RAM::NR34) & 0b1000000 != 0 {
-            self.channel3.length_timer -= 1;
-            if self.channel3.length_timer == 0 {
-                self.channel3.enabled = false
-            }
+        if self.channel3.length.clock(self.read_register(APU_RAM::NR34)) {
+            self.channel3.enabled = false;
         }
-
-        if self.channel4.length_timer != 0 && self.read_register(APU_RAM::NR44) & 0b1000000 != 0 {
-            self.channel4.length_timer -= 1;
-            if self.channel4.length_timer == 0 {
-                self.channel4.enabled = false
-            }
+        if self.channel4.length.clock(self.read_register(APU_RAM::NR44)) {
+            self.channel4.enabled = false;
         }
     }
 
