@@ -1016,11 +1016,11 @@ impl CPU {
 
             0xEA => {
                 mmu.write_byte(arg_u16, self.a, cart, joypad, apu);
-                12
+                16
             }
             0xF0 => {
                 self.a = mmu.read_byte(0xFF00 + arg_u8 as u16, cart, joypad, apu);
-                8
+                12
             }
             0xF2 => {
                 self.a = mmu.read_byte(0xFF00 + self.c as u16, cart, joypad, apu);
@@ -1028,7 +1028,7 @@ impl CPU {
             }
             0xFA => {
                 self.a = mmu.read_byte(arg_u16, cart, joypad, apu);
-                8
+                16
             }
 
             // 16 bit load instructions
@@ -1705,7 +1705,7 @@ impl CPU {
             0xD0 => {
                 if self.get_flag(FlagRegister::Carry) == 0 {
                     self.pc = self.pop(mmu, cart, joypad, apu);
-                    12
+                    20
                 } else {
                     8
                 }
