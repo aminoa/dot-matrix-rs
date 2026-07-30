@@ -108,7 +108,7 @@ impl WebApp {
     /// what's playing, whether it's paused, and any transient notice.
     fn update_status(&mut self) {
         let status = take_active_notice().unwrap_or_else(|| match &self.gb {
-            None => "Click the screen to load a ROM".to_string(),
+            None => "Click the screen to load a ROM, or press M for Complications".to_string(),
             Some(_) if self.paused => format!("Paused — {}", self.rom_id),
             Some(_) => format!("Playing {}", self.rom_id),
         });
@@ -211,6 +211,12 @@ impl eframe::App for WebApp {
 
         if ui.input(|i| i.key_pressed(egui::Key::P)) {
             self.paused = !self.paused;
+        }
+
+        // M loads the bundled Complications ROM
+        if ui.input(|i| i.key_pressed(egui::Key::M)) {
+            let rom = include_bytes!("../../tests/roms/Complications.gb");
+            self.load_rom("Complications.gb".to_string(), rom.to_vec());
         }
 
         self.update_status();
