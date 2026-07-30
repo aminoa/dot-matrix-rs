@@ -1,3 +1,5 @@
+use std::panic;
+
 use crate::consts::{RAM_BANK_SIZE, RAM_START_ADDR, ROM_BANK_SIZE};
 use chrono::{Date, DateTime, Local, Timelike};
 use serde::{Deserialize, Serialize};
@@ -65,7 +67,7 @@ impl Cart {
             0x0 => MBC::None,
             0x1 | 0x2 | 0x3 => MBC::MBC1,
             0x11 | 0x12 | 0x13 => MBC::MBC3,
-            _ => MBC::None,
+            _ => panic!("Error: Unsupported MBC Type: {}", cartridge_type),
         };
         let battery_support =
             cartridge_type == 0x03 || cartridge_type == 0x06 || cartridge_type == 0x09;
