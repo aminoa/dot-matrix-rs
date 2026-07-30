@@ -230,8 +230,19 @@ impl APU {
                 let channel2_output = self.output_channel2();
                 let channel3_output = self.output_channel3();
                 let channel4_output = self.output_channel4();
+
+                // NR50: master volume, averaged across both sides for the mono
+                // mix; each side's 0-7 value scales as (vol+1)/8. Games rely on
+                // this for music fade-outs.
+                let master_volume_reg = self.read_register(APU_RAM::NR50);
+                let left_volume = ((master_volume_reg & 0b111) + 1) as f32;
+                let right_volume = (((master_volume_reg >> 4) & 0b111) + 1) as f32;
+                let volume = (left_volume + right_volume) / 16.0;
+
                 let _ = self.sink.try_push(
-                    (channel1_output + channel2_output + channel3_output + channel4_output) / 20.0,
+                    (channel1_output + channel2_output + channel3_output + channel4_output)
+                        * volume
+                        / 20.0,
                 );
             }
         }
