@@ -9,6 +9,7 @@ enum MBC {
     None,
     MBC1,
     MBC3,
+    MBC5,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -45,7 +46,7 @@ pub struct Cart {
     pub ram_size_code: u8,
     pub ram_size_bytes: usize,
     pub ram_enabled: bool, //also does RTC registers for MBC3
-    pub rom_bank_selected: u8,
+    pub rom_bank_selected: u16,
     pub ram_bank_selected: u8,
     pub cartridge_type_mbc: MBC,
     pub battery_support: bool,
@@ -67,6 +68,7 @@ impl Cart {
             0x0 => MBC::None,
             0x1 | 0x2 | 0x3 => MBC::MBC1,
             0x11 | 0x12 | 0x13 => MBC::MBC3,
+            0x19 | 0x1A | 0x1B | 0x1C | 0x1D | 0x1E => MBC::MBC5,
             _ => panic!("Error: Unsupported MBC Type: {}", cartridge_type),
         };
         let battery_support =
@@ -146,6 +148,19 @@ impl Cart {
                 }
                 _ => panic!("Address out of ROM range: {:04X}", addr),
             },
+            MBC::MBC5 => match addr {
+                0x0000..=0x3FFF => self.rom[addr as usize],
+                0x4000..=0x7FFF => {
+                    let calculated_banks = self.rom_size_bytes as u32 / ROM_BANK_SIZE;
+                    let banked_addr = ((self.rom_bank_selected as usize
+                        % calculated_banks as usize)
+                        * ROM_BANK_SIZE as usize)
+                        + (addr as usize - ROM_BANK_SIZE as usize);
+                    self.rom[banked_addr as usize]
+                }
+                _ => panic!("Address out of ROM range: {:04X}", addr),
+            },
+            _ => panic!("Error: Unknown MBC"),
         }
     }
 
@@ -162,7 +177,8 @@ impl Cart {
                         self.ram_bank_selected = reg;
                     } else if self.rom_size_bytes >= 1 * 1024 * 1024 {
                         // min 1 MiB
-                        self.rom_bank_selected = (reg << 5) | (self.rom_bank_selected & 0x1F);
+                        self.rom_bank_selected =
+                            ((reg as u16) << 5) | (self.rom_bank_selected & 0x1F);
                     }
                 }
                 0x6000..0x8000 => {
@@ -172,7 +188,7 @@ impl Cart {
                 _ => panic!("Address out of ROM range: {:04X}", addr),
             },
             MBC::MBC3 => match addr {
-                0x0000..0x2000 => self.ram_enabled = val == 0x0A,
+                0x0000..=0x1FFF => self.ram_enabled = val == 0x0A,
                 0x2000..0x4000 => self.select_rom_bank(val),
                 0x4000..0x6000 => {
                     let reg = val & 0xF;
@@ -197,6 +213,21 @@ impl Cart {
                 }
                 _ => panic!("Address out of ROM range: {:04X}", addr),
             },
+            MBC::MBC5 => match addr {
+                0x0000..=0x1FFF => self.ram_enabled = val == 0x0A,
+                0x2000..=0x2FFF => self.select_rom_bank(val),
+                0x3000..=0x3FFF => {
+                    let new_bit = (val as u16 & 0b1) << 8;
+                    self.rom_bank_selected = (self.rom_bank_selected & 0b11111111) | new_bit;
+                }
+                0x4000..=0x5FFF => {
+                    if self.ram_enabled {
+                        let reg = val & 0xF;
+                        self.ram_bank_selected = reg;
+                    }
+                }
+                _ => panic!("Address out of ROM range: {:04X}", addr),
+            },
             _ => panic!("Error: Unrecognized MBC"),
         }
     }
@@ -213,6 +244,11 @@ impl Cart {
                 return self.ram[banked_addr as usize];
             }
             MBC::MBC3 => {
+                let banked_addr =
+                    (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                return self.ram[banked_addr as usize];
+            }
+            MBC::MBC5 => {
                 let banked_addr =
                     (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
                 return self.ram[banked_addr as usize];
@@ -240,6 +276,11 @@ impl Cart {
                 }
                 // TODO: rtc register write
             }
+            MBC::MBC5 => {
+                let banked_addr =
+                    (addr - RAM_START_ADDR) + (self.ram_bank_selected as u16 * RAM_BANK_SIZE);
+                self.ram[banked_addr as usize] = val;
+            }
         }
     }
 
@@ -250,15 +291,19 @@ impl Cart {
                 if bank == 0 {
                     bank = 1;
                 }
-                self.rom_bank_selected = self.rom_bank_selected & 0x60 | bank;
+                self.rom_bank_selected = self.rom_bank_selected & 0x60 | bank as u16;
             }
             MBC::MBC3 => {
                 let bank = val & 0x7F; // 7 bit register
                 if bank == 0 {
                     self.rom_bank_selected = 1
                 } else {
-                    self.rom_bank_selected = bank;
+                    self.rom_bank_selected = bank as u16;
                 }
+            }
+            MBC::MBC5 => {
+                let bank = val & 0b11111111;
+                self.rom_bank_selected = bank as u16;
             }
             _ => panic!("Error: Unrecognized MBC"),
         }
