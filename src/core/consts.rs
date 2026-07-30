@@ -622,7 +622,6 @@ impl APU_RAM {
 
     pub const AUDIO_RAM_START: u16 = 0xFF10;
     pub const AUDIO_RAM_END: u16 = 0xFF26;
-    pub const AUDIO_RAM_NR52: u16 = 0xFF26;
 
     // Wave RAM (custom audio)
     pub const WAVE_RAM_START: u16 = 0xFF30;

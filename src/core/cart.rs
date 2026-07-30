@@ -135,7 +135,10 @@ impl Cart {
             MBC::MBC1 | MBC::MBC3 => match addr {
                 0x0000..=0x3FFF => self.rom[addr as usize],
                 0x4000..=0x7FFF => {
-                    let banked_addr = (self.rom_bank_selected as usize * ROM_BANK_SIZE as usize)
+                    let calculated_banks = self.rom_size_bytes as u32 / ROM_BANK_SIZE;
+                    let banked_addr = ((self.rom_bank_selected as usize
+                        % calculated_banks as usize)
+                        * ROM_BANK_SIZE as usize)
                         + (addr as usize - ROM_BANK_SIZE as usize);
                     self.rom[banked_addr as usize]
                 }

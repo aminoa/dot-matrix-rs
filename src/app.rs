@@ -17,6 +17,7 @@ pub struct App {
     audio_renderer: AudioRenderer,
     next_frame_at: Instant,
     turbo: bool,
+    paused: bool,
 }
 
 impl App {
@@ -31,6 +32,7 @@ impl App {
             audio_renderer: audio_rendererer,
             next_frame_at: Instant::now() + FRAME_INTERVAL,
             turbo: turbo,
+            paused: false,
         }
     }
 }
@@ -53,15 +55,21 @@ pub fn run(rom_path: String, turbo: bool) -> eframe::Result<()> {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if ui.input(|i| i.key_pressed(egui::Key::P)) {
+            self.paused = !self.paused;
+        }
+
         let target_rate = if !self.turbo { CYCLES_PER_FRAME } else { CYCLES_PER_FRAME * 20 };
 
         let now = Instant::now();
-        if now >= self.next_frame_at {
+        if !self.paused && now >= self.next_frame_at {
             while self.gb.current_cycles < target_rate {
                 self.gb.step();
             }
             self.gb.current_cycles -= target_rate;
             self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
+        } else if self.paused {
+            self.next_frame_at = Instant::now() + FRAME_INTERVAL;
         }
 
         self.video_renderer.update(ui, &mut self.gb, &self.rom_path);

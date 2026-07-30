@@ -26,7 +26,7 @@ impl MMU {
     pub fn read_byte(&self, addr: u16, cart: &Cart, joypad: &Joypad, apu: &mut APU) -> u8 {
         match addr {
             0x0..=0x7FFF => cart.read_rom(addr),
-            0xA000..0xBFFF => cart.read_ram(addr), // if this exists
+            0xA000..=0xBFFF => cart.read_ram(addr), // if this exists
             0xFF00 => joypad.read(),
             0xFF10..=0xFF3F => apu.read_register(addr),
             0xFF01 => 0xFF, // Dummy value for serial data register
@@ -43,10 +43,10 @@ impl MMU {
         apu: &mut APU,
     ) {
         match addr {
-            0x0000..0x7FFF => cart.write_rom(addr, val),
-            0xA000..0xBFFF => cart.write_ram(addr, val),
+            0x0000..=0x7FFF => cart.write_rom(addr, val),
+            0xA000..=0xBFFF => cart.write_ram(addr, val),
             0xFF00 => joypad.write(val),
-            0xFF10..0xFF3F => apu.write_register(addr, val),
+            0xFF10..=0xFF3F => apu.write_register(addr, val),
             0xFF46 => self.oam_dma_transfer(val, cart, joypad, apu),
             _ => self.ram[addr as usize] = val,
         }

@@ -1,5 +1,3 @@
-use std::{panic, println};
-
 use crate::consts::{APU_RAM, AUDIO_INIT, CLOCK_SPEED};
 use ringbuf::{traits::Producer, HeapProd};
 
@@ -60,11 +58,6 @@ impl Length {
         return enabled;
     }
 }
-
-// TODO:
-// DAC
-// Mixer
-// Volume
 
 pub struct Channel1 {
     pub enabled: bool,
@@ -246,9 +239,20 @@ impl APU {
 
     pub fn read_register(&self, addr: u16) -> u8 {
         match addr {
-            APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => self.regs[addr as usize - 0xFF10],
+            APU_RAM::NR52 => {
+                let output = 0b01110000
+                    | ((self.master_enable as u8) << 7)
+                    | ((self.channel4.enabled as u8) << 3)
+                    | ((self.channel3.enabled as u8) << 2)
+                    | ((self.channel2.enabled as u8) << 1)
+                    | ((self.channel1.enabled as u8) << 0);
+                output
+            }
+            APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => {
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize]
+            }
             APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => {
-                self.wave_ram[addr as usize - 0xFF30]
+                self.wave_ram[addr as usize - APU_RAM::WAVE_RAM_START as usize]
             }
             _ => 0xFF,
         }
@@ -257,18 +261,29 @@ impl APU {
     pub fn write_register(&mut self, addr: u16, val: u8) {
         match addr {
             APU_RAM::NR52 => self.master_enable = val & 0b10000000 != 0,
-            APU_RAM::NR51 => (), // Panning
-            APU_RAM::NR50 => (), // Master Volume
-
+            // NR50 (master volume) and NR51 (panning) fall through to the
+            // generic store below: games read these back and modify them
+            // (e.g. Pokemon's music fade-out decrements NR50 until it reads 0),
+            // so dropping the write breaks read-modify-write loops.
             APU_RAM::NR11 => {
                 self.channel1.length.timer = 64 - (val & 0b11_1111) as u16;
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
+            }
+
+            APU_RAM::NR12 => {
+                if val & 0b11111000 == 0 {
+                    self.channel1.enabled = false;
+                }
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR14 => {
-                self.regs[addr as usize - 0xFF10] = val;
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val;
                 if val & 0b10000000 != 0 {
-                    self.channel1.enabled = true;
+                    let dac_enabled = self.read_register(APU_RAM::NR12) & 0b11111000 != 0;
+                    if dac_enabled {
+                        self.channel1.enabled = true;
+                    }
                     if self.channel1.length.timer == 0 {
                         self.channel1.length.timer = 64;
                     }
@@ -289,12 +304,22 @@ impl APU {
 
             APU_RAM::NR21 => {
                 self.channel2.length.timer = 64 - (val & 0b11_1111) as u16;
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
+            }
+
+            APU_RAM::NR22 => {
+                if val & 0b11111000 == 0 {
+                    self.channel2.enabled = false;
+                }
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR24 => {
                 if val & 0b1000_0000 != 0 {
-                    self.channel2.enabled = true;
+                    let dac_enabled = self.read_register(APU_RAM::NR22) & 0b11111000 != 0;
+                    if dac_enabled {
+                        self.channel2.enabled = true;
+                    }
                     if self.channel2.length.timer == 0 {
                         self.channel2.length.timer = 64;
                     }
@@ -306,12 +331,12 @@ impl APU {
                     self.channel2.envelope.timer = 0b111 & self.read_register(APU_RAM::NR22);
                 }
 
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR31 => {
                 self.channel3.length.timer = 256 - val as u16;
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR34 => {
@@ -329,17 +354,27 @@ impl APU {
                     self.channel3.wave_position = 0;
                 }
 
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR41 => {
                 self.channel4.length.timer = 64 - (val & 0b11_1111) as u16;
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
+            }
+
+            APU_RAM::NR42 => {
+                if val & 0b11111000 == 0 {
+                    self.channel4.enabled = false;
+                }
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR44 => {
                 if val & 0b1000_0000 != 0 {
-                    self.channel4.enabled = true;
+                    let dac_enabled = self.read_register(APU_RAM::NR42) & 0b11111000 != 0;
+                    if dac_enabled {
+                        self.channel4.enabled = true;
+                    }
                     if self.channel4.length.timer == 0 {
                         self.channel4.length.timer = 64;
                     }
@@ -363,14 +398,14 @@ impl APU {
                     self.channel4.envelope.timer = 0b111 & self.read_register(APU_RAM::NR42);
                 }
 
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::AUDIO_RAM_START..=APU_RAM::AUDIO_RAM_END => {
-                self.regs[addr as usize - 0xFF10] = val
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
             APU_RAM::WAVE_RAM_START..=APU_RAM::WAVE_RAM_END => {
-                self.wave_ram[addr as usize - 0xFF30] = val
+                self.wave_ram[addr as usize - APU_RAM::WAVE_RAM_START as usize] = val
             }
             _ => (),
         }
@@ -436,7 +471,10 @@ impl APU {
         // 0 to 15
         let digital =
             if self.channel1.enabled && bit == 1 { self.channel1.envelope.volume } else { 0 };
-        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+
+        // DAC
+        let dac_enabled = (self.read_register(APU_RAM::NR12) & 0b11111000) != 0;
+        let analog = if dac_enabled { (digital as f32 / 7.5) - 1.0 } else { 0.0 };
         return analog;
     }
 
@@ -447,7 +485,9 @@ impl APU {
         // 0 to 15
         let digital =
             if self.channel2.enabled && bit == 1 { self.channel2.envelope.volume } else { 0 };
-        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+
+        let dac_enabled = (self.read_register(APU_RAM::NR22) & 0b11111000) != 0;
+        let analog = if dac_enabled { (digital as f32 / 7.5) - 1.0 } else { 0.0 };
         return analog;
     }
 
@@ -481,7 +521,8 @@ impl APU {
         } else {
             0
         };
-        let analog = (digital as f32 / 7.5) - 1.0; // range: -1 to 1
+        let dac_enabled = (self.read_register(APU_RAM::NR42) & 0b11111000) != 0;
+        let analog = if dac_enabled { (digital as f32 / 7.5) - 1.0 } else { 0.0 };
         return analog;
     }
 
