@@ -23,7 +23,8 @@ pub struct App {
 impl App {
     pub fn new(rom_path: String, turbo: bool) -> Self {
         let (audio_rendererer, producer) = AudioRenderer::new();
-        let gb = GB::new(&rom_path, producer, audio_rendererer.sample_rate);
+        let rom = std::fs::read(&rom_path).expect("Error: Unable to read the file");
+        let gb = GB::new(rom, producer, audio_rendererer.sample_rate);
 
         App {
             gb: gb,

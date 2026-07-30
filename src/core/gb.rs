@@ -21,8 +21,7 @@ pub struct GB {
 }
 
 impl GB {
-    pub fn new(rom_path: &String, sink: HeapProd<f32>, sample_rate: f32) -> GB {
-        let rom = fs::read(&rom_path).expect("Error: Unable to read the file");
+    pub fn new(rom: Vec<u8>, sink: HeapProd<f32>, sample_rate: f32) -> GB {
         return GB {
             apu: APU::new(sink, sample_rate),
             cpu: CPU::new(),

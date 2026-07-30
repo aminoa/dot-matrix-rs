@@ -24,6 +24,7 @@ This is a complete rewrite of my Game Boy emulator, [Dot Matrix](https://github.
 - Memory banking (MBC1/MBC3)
 - Savestates
 - APU
+- Web target
 
 ## Credits:
 

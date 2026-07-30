@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dot Matrix</title>
+  <link data-trunk rel="rust" href="../../Cargo.toml" data-wasm-opt="s" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: #fff;
+      color: #222;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 2vh;
+      overflow: hidden;
+    }
+    /* sized so the screen fills the viewport; the lower body runs below the fold */
+    .gameboy {
+      flex: none;
+      width: min(94vw, 100vh);
+      background: #f1f1ef;
+      border: 1px solid #c9c9c5;
+      border-radius: 12px 12px 10% 12px;
+      padding: 3% 3% 6%;
+    }
+    .bezel {
+      background: #dcdcd8;
+      border: 1px solid #c9c9c5;
+      border-radius: 8px 8px 9% 8px;
+      padding: 2% 6% 3%;
+    }
+    .bezel-label {
+      display: flex;
+      align-items: center;
+      gap: 3%;
+      color: #8a8a86;
+      font-size: clamp(0.55rem, 1.6vmin, 0.95rem);
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      margin-bottom: 2%;
+    }
+    .bezel-label::before, .bezel-label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #b8b8b4;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 160 / 144;
+      background: #fff;
+      border: 1px solid #bbb;
+      cursor: pointer;
+    }
+    canvas:focus { outline: none; }
+    .status {
+      margin-top: 2%;
+      min-height: 1.2em;
+      font-size: clamp(0.6rem, 1.6vmin, 0.9rem);
+      letter-spacing: 0.1em;
+      color: #8a8a86;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .face {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8%;
+      padding: 0 4%;
+    }
+    .dpad { position: relative; width: 18%; aspect-ratio: 1; }
+    .dpad::before, .dpad::after {
+      content: "";
+      position: absolute;
+      background: #c6c6c2;
+      border-radius: 6px;
+    }
+    .dpad::before { left: 0; right: 0; top: 36%; height: 28%; }
+    .dpad::after { top: 0; bottom: 0; left: 36%; width: 28%; }
+    .ab { display: flex; gap: 12%; width: 24%; transform: rotate(-25deg); }
+    .ab span { width: 48%; aspect-ratio: 1; border-radius: 50%; background: #c6c6c2; }
+    .pills { display: flex; gap: 4%; justify-content: center; margin-top: 8%; }
+    .pills span { width: 9%; aspect-ratio: 3.4; border-radius: 999px; background: #c6c6c2; transform: rotate(-25deg); }
+  </style>
+</head>
+<body>
+  <div class="gameboy">
+    <div class="bezel">
+      <p class="bezel-label">dot-matrix-rs</p>
+      <canvas id="screen" width="160" height="144"></canvas>
+      <p class="status" id="status"></p>
+    </div>
+    <div class="face">
+      <div class="dpad"></div>
+      <div class="ab"><span></span><span></span></div>
+    </div>
+    <div class="pills"><span></span><span></span></div>
+  </div>
+</body>
+</html>

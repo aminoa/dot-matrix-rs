@@ -1,7 +1,7 @@
 use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::gb::GB;
 use crate::joypad::JoypadButton;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 pub struct VideoRenderer {
     texture: Option<egui::TextureHandle>,
@@ -78,14 +78,24 @@ impl VideoRenderer {
         });
 
         if do_savetate {
+            #[cfg(not(target_arch = "wasm32"))]
             gb.savestate(rom_path);
+            #[cfg(target_arch = "wasm32")]
+            crate::storage::save_state(gb, rom_path);
         }
         if do_loadstate {
+            #[cfg(not(target_arch = "wasm32"))]
             gb.loadstate(rom_path);
+            #[cfg(target_arch = "wasm32")]
+            crate::storage::load_state(gb, rom_path);
         }
 
         if autosave_due {
+            #[cfg(not(target_arch = "wasm32"))]
             gb.mmu.saveram(rom_path, &gb.cart);
+            #[cfg(target_arch = "wasm32")]
+            crate::storage::save_ram(gb, rom_path);
+            self.autosave_timer = Instant::now() + Duration::from_secs(10);
         }
 
         ui.ctx().request_repaint();
