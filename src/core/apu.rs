@@ -231,13 +231,10 @@ impl APU {
                 let channel3_output = self.output_channel3();
                 let channel4_output = self.output_channel4();
 
-                // NR50: master volume, averaged across both sides for the mono
-                // mix; each side's 0-7 value scales as (vol+1)/8. Games rely on
-                // this for music fade-outs.
                 let master_volume_reg = self.read_register(APU_RAM::NR50);
                 let left_volume = ((master_volume_reg & 0b111) + 1) as f32;
                 let right_volume = (((master_volume_reg >> 4) & 0b111) + 1) as f32;
-                let volume = (left_volume + right_volume) / 16.0;
+                let volume = (left_volume + right_volume) / 16.0; // lower default volume
 
                 let _ = self.sink.try_push(
                     (channel1_output + channel2_output + channel3_output + channel4_output)
@@ -272,10 +269,6 @@ impl APU {
     pub fn write_register(&mut self, addr: u16, val: u8) {
         match addr {
             APU_RAM::NR52 => self.master_enable = val & 0b10000000 != 0,
-            // NR50 (master volume) and NR51 (panning) fall through to the
-            // generic store below: games read these back and modify them
-            // (e.g. Pokemon's music fade-out decrements NR50 until it reads 0),
-            // so dropping the write breaks read-modify-write loops.
             APU_RAM::NR11 => {
                 self.channel1.length.timer = 64 - (val & 0b11_1111) as u16;
                 self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
