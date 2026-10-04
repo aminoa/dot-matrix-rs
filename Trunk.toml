@@ -1,5 +1,0 @@
-[build]
-target = "src/web/index.html"
-dist = "dist"
-# relative asset URLs so the site works from any subpath (e.g. GitHub Pages)
-public_url = "./"
