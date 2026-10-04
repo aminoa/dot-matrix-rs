@@ -1,3 +1,5 @@
+use std::eprintln;
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::{traits::*, HeapCons, HeapProd, HeapRb};
 
@@ -7,11 +9,19 @@ pub struct AudioRenderer {
 }
 
 impl AudioRenderer {
-    pub fn new() -> (AudioRenderer, HeapProd<f32>) {
+    pub fn new() -> Result<(AudioRenderer, HeapProd<f32>), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
-        let device = host.default_output_device().expect("Error: no output device");
+        let Some(device) = host.default_output_device() else {
+            return Err("Error: no output device".into());
+        };
+        let config: cpal::StreamConfig = match device.default_output_config() {
+            Ok(config) => config.into(),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                return Err(e.into());
+            }
+        };
 
-        let config: cpal::StreamConfig = device.default_output_config().unwrap().into();
         let channels = config.channels as usize;
 
         // 1 second of buffer
@@ -39,6 +49,6 @@ impl AudioRenderer {
         stream.play().expect("Error: failed to start stream");
 
         let sample_rate = config.sample_rate as f32;
-        (AudioRenderer { stream, sample_rate }, producer)
+        Ok((AudioRenderer { stream, sample_rate }, producer))
     }
 }

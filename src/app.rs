@@ -22,7 +22,8 @@ pub struct App {
 
 impl App {
     pub fn new(rom_path: String, turbo: bool) -> Self {
-        let (audio_rendererer, producer) = AudioRenderer::new();
+        let (audio_rendererer, producer) =
+            AudioRenderer::new().expect("Error: Unable to initialize audio");
         let gb = GB::new(&rom_path, producer, audio_rendererer.sample_rate);
 
         App {
