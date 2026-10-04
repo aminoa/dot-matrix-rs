@@ -1546,10 +1546,7 @@ impl CPU {
                 self.rra();
                 4
             }
-            0xCB => {
-                self.execute_cb(arg_u8, mmu, cart, joypad, apu);
-                4
-            }
+            0xCB => self.execute_cb(arg_u8, mmu, cart, joypad, apu),
 
             // CPU control instructions
             0x00 => 4,

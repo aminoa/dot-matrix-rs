@@ -179,8 +179,9 @@ impl PPU {
         let lyc = mmu.read_byte(PPUMemory::LYC as u16, cart, joypad, apu);
         if scanline == lyc {
             stat |= 1 << LCDStatBits::LYCEqualsLY as u8;
-            // if (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0 {
-            // }
+            if (stat & (1 << LCDStatBits::LCDIntSelect as u8)) != 0 {
+                cpu.request_interrupt(InterruptBit::STAT, mmu, cart, joypad, apu);
+            }
         } else {
             stat &= !(1 << LCDStatBits::LYCEqualsLY as u8);
         }

@@ -78,16 +78,13 @@ impl VideoRenderer {
         });
 
         if do_savetate {
-            #[cfg(not(target_arch = "wasm32"))]
             gb.savestate(rom_path);
         }
         if do_loadstate {
-            #[cfg(not(target_arch = "wasm32"))]
             gb.loadstate(rom_path);
         }
 
         if autosave_due {
-            #[cfg(not(target_arch = "wasm32"))]
             gb.mmu.saveram(rom_path, &gb.cart);
             self.autosave_timer = Instant::now() + Duration::from_secs(10);
         }

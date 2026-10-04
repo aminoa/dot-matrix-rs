@@ -69,7 +69,7 @@ impl eframe::App for App {
                 self.gb.step();
             }
             self.gb.current_cycles -= target_rate;
-            self.next_frame_at += FRAME_INTERVAL; // accumulator — no drift
+            self.next_frame_at += FRAME_INTERVAL;
         } else if self.paused {
             self.next_frame_at = Instant::now() + FRAME_INTERVAL;
         }
