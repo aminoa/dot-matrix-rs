@@ -162,8 +162,6 @@ impl CPU {
                 } else {
                     mmu.write_byte(TimerSource::TimerCounter as u16, new_tima, cart, joypad, apu);
                 }
-            } else {
-                self.tima_cycles += instruction_cycles;
             }
         }
     }
