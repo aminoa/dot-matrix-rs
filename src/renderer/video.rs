@@ -1,7 +1,7 @@
 use crate::consts::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::gb::GB;
 use crate::joypad::JoypadButton;
-use web_time::{Duration, Instant};
+use std::time::{Duration, Instant};
 
 pub struct VideoRenderer {
     texture: Option<egui::TextureHandle>,
