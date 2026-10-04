@@ -10,6 +10,8 @@ use crate::consts::{
 use crate::gb::GB;
 use crate::video::VideoRenderer;
 
+const TURBO_BUDGET: Duration = Duration::from_millis(16);
+
 pub struct App {
     gb: GB,
     rom_path: String,
@@ -18,6 +20,9 @@ pub struct App {
     next_frame_at: Instant,
     turbo: bool,
     paused: bool,
+
+    fps_count: u32,
+    fps_window_start: Instant,
 }
 
 impl App {
@@ -35,6 +40,8 @@ impl App {
             next_frame_at: Instant::now() + FRAME_INTERVAL,
             turbo: turbo,
             paused: false,
+            fps_count: 0,
+            fps_window_start: Instant::now(),
         }
     }
 }
@@ -45,6 +52,7 @@ pub fn run(rom_path: String, turbo: bool) -> eframe::Result<()> {
             (SCREEN_WIDTH * SCALE_FACTOR) as f32,
             (SCREEN_HEIGHT * SCALE_FACTOR) as f32,
         ]),
+        vsync: !turbo,
         ..Default::default()
     };
 
@@ -58,17 +66,32 @@ impl eframe::App for App {
             self.paused = !self.paused;
         }
 
-        let target_rate = if !self.turbo { CYCLES_PER_FRAME } else { CYCLES_PER_FRAME * 20 };
-
         let now = Instant::now();
-        if !self.paused && now >= self.next_frame_at {
-            while self.gb.current_cycles < target_rate {
+        if self.paused {
+            self.next_frame_at = now + FRAME_INTERVAL;
+        } else if self.turbo {
+            // run whole frames until the budget is spent, then let egui paint
+            while now.elapsed() < TURBO_BUDGET {
+                while self.gb.current_cycles < CYCLES_PER_FRAME {
+                    self.gb.step();
+                }
+                self.gb.current_cycles -= CYCLES_PER_FRAME;
+                self.fps_count += 1;
+            }
+        } else if now >= self.next_frame_at {
+            while self.gb.current_cycles < CYCLES_PER_FRAME {
                 self.gb.step();
             }
-            self.gb.current_cycles -= target_rate;
+            self.gb.current_cycles -= CYCLES_PER_FRAME;
             self.next_frame_at += FRAME_INTERVAL;
-        } else if self.paused {
-            self.next_frame_at = Instant::now() + FRAME_INTERVAL;
+            self.fps_count += 1;
+        }
+
+        let elapsed = now.duration_since(self.fps_window_start);
+        if elapsed >= Duration::from_secs(1) {
+            println!("FPS: {:.1}", self.fps_count as f32 / elapsed.as_secs_f32());
+            self.fps_count = 0;
+            self.fps_window_start = now;
         }
 
         self.video_renderer.update(ui, &mut self.gb, &self.rom_path);
