@@ -72,7 +72,6 @@ impl GB {
         bincode::serialize_into(&mut bytes, &self.cpu).expect("serialize cpu");
         bincode::serialize_into(&mut bytes, &self.ppu).expect("serialize ppu");
         bincode::serialize_into(&mut bytes, &self.mmu).expect("serialize mmu");
-        bincode::serialize_into(&mut bytes, &self.cart).expect("serialize cart");
 
         fs::write(&path, &bytes).expect("Failed to write savestate file");
         println!("Savestate saved: {}", path.display());
@@ -94,10 +93,6 @@ impl GB {
         self.cpu = bincode::deserialize_from(&mut cursor).expect("deserialize cpu");
         self.ppu = bincode::deserialize_from(&mut cursor).expect("deserialize ppu");
         self.mmu = bincode::deserialize_from(&mut cursor).expect("deserialize mmu");
-
-        let rom = std::mem::take(&mut self.cart.rom);
-        self.cart = bincode::deserialize_from(&mut cursor).expect("deserialize cart");
-        self.cart.rom = rom;
 
         println!("Savestate loaded: {}", path.display());
     }
