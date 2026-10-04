@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use eframe;
+use eframe::{self, CreationContext};
 use egui;
 
 use crate::audio::AudioRenderer;
@@ -48,11 +48,8 @@ pub fn run(rom_path: String, turbo: bool) -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
-        "Dot Matrix",
-        native_options,
-        Box::new(|_| Ok(Box::new(App::new(rom_path, turbo)))),
-    )
+    let app = App::new(rom_path, turbo);
+    eframe::run_native("Dot Matrix", native_options, Box::new(|_| Ok(Box::new(app))))
 }
 
 impl eframe::App for App {
