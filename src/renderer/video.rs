@@ -86,6 +86,7 @@ impl VideoRenderer {
 
         if autosave_due {
             gb.mmu.saveram(rom_path, &gb.cart);
+            self.autosave_timer = Instant::now() + Duration::from_secs(10);
         }
 
         ui.ctx().request_repaint();
