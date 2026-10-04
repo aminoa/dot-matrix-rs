@@ -319,6 +319,7 @@ impl APU {
             }
 
             APU_RAM::NR24 => {
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val;
                 if val & 0b1000_0000 != 0 {
                     let dac_enabled = self.read_register(APU_RAM::NR22) & 0b11111000 != 0;
                     if dac_enabled {
@@ -327,15 +328,12 @@ impl APU {
                     if self.channel2.length.timer == 0 {
                         self.channel2.length.timer = 64;
                     }
-                    let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8
-                        | (self.read_register(APU_RAM::NR23) as i32);
+                    let period: i32 = (((self.read_register(APU_RAM::NR24)) as i32) & 7) << 8;
                     self.channel2.frequency_timer = (2048 - period as i32) * 4;
                     self.channel2.envelope.volume =
                         (0b1111_0000 & self.read_register(APU_RAM::NR22)) >> 4;
                     self.channel2.envelope.timer = 0b111 & self.read_register(APU_RAM::NR22);
                 }
-
-                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR31 => {
@@ -344,6 +342,7 @@ impl APU {
             }
 
             APU_RAM::NR34 => {
+                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val;
                 let dac_enabled = (self.read_register(APU_RAM::NR30) & 0b10000000) != 0;
                 if val & 0b1000_0000 != 0 {
                     if dac_enabled {
@@ -357,8 +356,6 @@ impl APU {
                     self.channel3.frequency_timer = (2048 - period as i32) * 2;
                     self.channel3.wave_position = 0;
                 }
-
-                self.regs[addr as usize - APU_RAM::AUDIO_RAM_START as usize] = val
             }
 
             APU_RAM::NR41 => {

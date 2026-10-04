@@ -260,8 +260,8 @@ pub const OPCODES: &[Opcode] = &[
     Opcode { opcode: 0xF9, mnemonic: "LD SP", bytes: 1, cycles: &[8] },
     Opcode { opcode: 0xFA, mnemonic: "LD", bytes: 3, cycles: &[16] },
     Opcode { opcode: 0xFB, mnemonic: "EI", bytes: 1, cycles: &[4] },
-    Opcode { opcode: 0xFC, mnemonic: "ILLEGAL_FC", bytes: 4, cycles: &[1] },
-    Opcode { opcode: 0xFD, mnemonic: "ILLEGAL_FD", bytes: 4, cycles: &[1] },
+    Opcode { opcode: 0xFC, mnemonic: "ILLEGAL_FC", bytes: 1, cycles: &[4] },
+    Opcode { opcode: 0xFD, mnemonic: "ILLEGAL_FD", bytes: 1, cycles: &[4] },
     Opcode { opcode: 0xFE, mnemonic: "CP", bytes: 2, cycles: &[8] },
     Opcode { opcode: 0xFF, mnemonic: "RST", bytes: 1, cycles: &[16] },
 ];

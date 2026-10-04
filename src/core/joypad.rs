@@ -67,7 +67,9 @@ impl Joypad {
 
         if (self.select_buttons & SELECT_BUTTON_BIT) == 0 {
             result &= self.action_buttons | 0xF0;
-        } else if (self.select_buttons & SELECT_DIRECTION_BIT) == 0 {
+        }
+
+        if (self.select_buttons & SELECT_DIRECTION_BIT) == 0 {
             result &= self.direction_buttons | 0xF0;
         }
 
