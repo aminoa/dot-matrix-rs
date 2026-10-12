@@ -41,7 +41,7 @@ impl AudioRenderer {
                         }
                     }
                 },
-                move |err| eprintln!("Error: audio stream error: {err}"),
+                |err| eprintln!("Error: audio stream error: {err}"),
                 None,
             )
             .expect("Error: failed to build output stream");
